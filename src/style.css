@@ -1,0 +1,414 @@
+:root {
+  --ink: #2a2e85;
+  --ink-soft: rgba(42, 46, 133, 0.55);
+  --red: #c0302a;
+  --paper: #f7f4ec;
+  --rule: rgba(120, 150, 210, 0.35);
+  --font: 'Patrick Hand', 'Comic Sans MS', 'Chalkboard SE', cursive;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  user-select: none;
+}
+
+#view {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+/* ── HUD ─────────────────────────────────────────── */
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  font-size: 22px;
+  letter-spacing: 0.5px;
+}
+#hud .small {
+  font-size: 16px;
+  opacity: 0.85;
+}
+.tl {
+  position: absolute;
+  top: 16px;
+  left: 84px;
+}
+.tr {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  text-align: right;
+}
+.bl {
+  position: absolute;
+  left: 84px;
+  bottom: 22px;
+}
+.br {
+  position: absolute;
+  right: 24px;
+  bottom: 22px;
+  text-align: right;
+}
+.bar {
+  position: relative;
+  height: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 8px 5px 9px 4px;
+  overflow: hidden;
+  background: var(--paper);
+}
+.bar .fill {
+  height: 100%;
+  width: 100%;
+  background: repeating-linear-gradient(-45deg, var(--ink) 0 2px, transparent 2px 6px);
+  transition: width 0.12s linear;
+}
+.hp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.hp-row .lbl {
+  font-size: 16px;
+}
+.bar.hp {
+  width: 200px;
+}
+#hud-hp-fill.low {
+  background: repeating-linear-gradient(-45deg, var(--red) 0 2px, transparent 2px 6px);
+}
+#hud-ammo {
+  font-size: 26px;
+  margin-top: 6px;
+}
+#hud-ammo b {
+  font-size: 44px;
+  font-weight: normal;
+}
+#hud-ammo .reloading {
+  font-size: 22px;
+  color: var(--red);
+}
+#hud-pips {
+  display: flex;
+  gap: 3px;
+  margin-top: 4px;
+  max-width: 240px;
+  flex-wrap: wrap;
+}
+#hud-pips i {
+  width: 6px;
+  height: 12px;
+  border: 1.5px solid var(--ink-soft);
+  border-radius: 2px;
+}
+#hud-pips i.f {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+#hud-weapons {
+  font-size: 15px;
+  border-left: 2px solid var(--ink-soft);
+  padding-left: 10px;
+  margin-bottom: 6px;
+  display: inline-block;
+  text-align: left;
+}
+#hud-weapons .w {
+  opacity: 0.45;
+}
+#hud-weapons .w.active {
+  opacity: 1;
+  color: var(--red);
+}
+#hud-weapons span {
+  display: inline-block;
+  width: 16px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  text-align: center;
+  font-size: 12px;
+  margin-right: 4px;
+}
+#hud-weapon-name {
+  font-size: 28px;
+}
+
+#hud-meter {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(340px, 40vw);
+  text-align: center;
+}
+#hud-meter .lbl {
+  font-size: 16px;
+  margin-bottom: 2px;
+}
+#hud-meter .key {
+  opacity: 0.6;
+  font-size: 13px;
+}
+#hud-meter .bar {
+  height: 16px;
+}
+#hud-meter .fill {
+  background: repeating-linear-gradient(45deg, #d98a2b 0 3px, transparent 3px 7px);
+  transition: none;
+}
+#hud-meter .ticks {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(20% - 2px), var(--ink-soft) calc(20% - 2px) 20%);
+}
+#hud-meter.active .bar {
+  border-color: #d98a2b;
+  box-shadow: 0 0 0 3px rgba(217, 138, 43, 0.25);
+}
+#hud-meter.empty .lbl {
+  color: var(--red);
+}
+
+#hud-boss {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 50vw);
+  text-align: center;
+  font-size: 20px;
+}
+#hud-boss .bar {
+  border-color: var(--red);
+  height: 18px;
+}
+#hud-boss .fill {
+  background: repeating-linear-gradient(-45deg, var(--red) 0 3px, transparent 3px 7px);
+}
+
+#hud-banner {
+  position: absolute;
+  top: 22%;
+  width: 100%;
+  text-align: center;
+  font-size: 54px;
+  opacity: 0;
+  transition: opacity 0.4s;
+  text-shadow: 2px 2px 0 var(--paper);
+}
+#hud-banner.pop {
+  animation: pop 0.35s ease-out;
+}
+@keyframes pop {
+  from {
+    transform: scale(1.4) rotate(-3deg);
+  }
+  to {
+    transform: scale(1) rotate(0);
+  }
+}
+#hud-hint {
+  position: absolute;
+  bottom: 86px;
+  width: 100%;
+  text-align: center;
+  font-size: 18px;
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+#hud-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%) rotate(3deg);
+  background:
+    linear-gradient(var(--ink), var(--ink)) center/2px 7px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) center/7px 2px no-repeat;
+  border: 2px solid var(--ink);
+  border-radius: 50% 45% 55% 48%;
+  opacity: 0.85;
+}
+#hud-hitmark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 30px;
+  height: 30px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  opacity: 0;
+  background:
+    linear-gradient(var(--ink), var(--ink)) center top/2px 9px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) center bottom/2px 9px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) left center/9px 2px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) right center/9px 2px no-repeat;
+}
+#hud-hitmark.on {
+  opacity: 1;
+}
+#hud-hitmark.head,
+#hud-hitmark.kill {
+  width: 40px;
+  height: 40px;
+  background:
+    linear-gradient(var(--red), var(--red)) center top/3px 12px no-repeat,
+    linear-gradient(var(--red), var(--red)) center bottom/3px 12px no-repeat,
+    linear-gradient(var(--red), var(--red)) left center/12px 3px no-repeat,
+    linear-gradient(var(--red), var(--red)) right center/12px 3px no-repeat;
+}
+#hud-scope {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 0 34vh, var(--paper) calc(34vh + 1px));
+}
+#hud-scope::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 68vh;
+  height: 68vh;
+  transform: translate(-50%, -50%);
+  border: 4px solid var(--ink);
+  border-radius: 50%;
+  background:
+    linear-gradient(var(--ink), var(--ink)) center/2px 100% no-repeat,
+    linear-gradient(var(--ink), var(--ink)) center/100% 2px no-repeat;
+  opacity: 0.85;
+}
+
+/* ── Screens ─────────────────────────────────────── */
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(247, 244, 236, 0.55);
+  padding: 16px;
+}
+.sheet {
+  background: var(--paper);
+  background-image:
+    linear-gradient(90deg, transparent 52px, rgba(230, 130, 130, 0.6) 52px 54px, transparent 54px),
+    repeating-linear-gradient(transparent 0 29px, var(--rule) 29px 30px);
+  border: 2px solid var(--ink);
+  border-radius: 6px 10px 4px 12px;
+  box-shadow: 6px 7px 0 rgba(42, 46, 133, 0.25);
+  padding: 22px 30px 26px 72px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: auto;
+}
+.small-sheet {
+  text-align: center;
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+h1 {
+  margin: 0;
+  font-size: 56px;
+  font-weight: normal;
+  transform: rotate(-1.5deg);
+}
+h2 {
+  margin: 0;
+  font-size: 44px;
+  font-weight: normal;
+}
+.sub {
+  margin: 0 0 12px;
+  font-size: 20px;
+  opacity: 0.8;
+}
+.menu-body {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+#pad {
+  position: relative;
+  width: min(360px, 80vw);
+  aspect-ratio: 480 / 600;
+  border: 2px dashed var(--ink-soft);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.55);
+}
+#pad canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#pad .pad-ink {
+  cursor: crosshair;
+  touch-action: none;
+}
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 240px;
+}
+.btns {
+  display: flex;
+  gap: 8px;
+}
+button {
+  font-family: var(--font);
+  font-size: 20px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 10px 6px 12px 5px;
+  padding: 4px 14px;
+  cursor: pointer;
+  box-shadow: 2px 3px 0 rgba(42, 46, 133, 0.3);
+}
+button:hover {
+  transform: rotate(-1deg) translateY(-1px);
+}
+button:active {
+  transform: translate(1px, 2px);
+  box-shadow: none;
+}
+button.big {
+  font-size: 32px;
+  padding: 6px 20px;
+  color: var(--red);
+  border-color: var(--red);
+}
+.controls {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 18px;
+  line-height: 30px;
+}
+.controls b {
+  font-weight: normal;
+  color: var(--red);
+}
+#over-stats {
+  font-size: 24px;
+  margin: 0;
+}
