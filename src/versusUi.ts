@@ -397,7 +397,10 @@ export function initVersus(ctx: VersusCtx) {
   };
   $('vs-undo').onclick = () => pad.undo();
   $('vs-clear').onclick = () => pad.clear();
-  $('vs-example').onclick = () => pad.example();
+  $('vs-example').onclick = () => {
+    pad.example();
+    $('vs-example').textContent = `example: ${pad.exampleName}`;
+  };
 
   // ── Buttons ──────────────────────────────────────────────────────────
   $('btn-create').onclick = () => {

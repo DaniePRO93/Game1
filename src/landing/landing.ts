@@ -1,4 +1,5 @@
 import { DrawPad } from '../draw/drawPad';
+import { placeDoodles } from '../ui/marginDoodles';
 
 // The pad saves to the same localStorage key the game reads, so whatever you
 // doodle here is the enemy when you hit "fight this doodle".
@@ -9,7 +10,35 @@ if (host) {
   if (pad.isEmpty('enemy')) pad.example();
   document.getElementById('pad-undo')!.onclick = () => pad!.undo();
   document.getElementById('pad-clear')!.onclick = () => pad!.clear();
-  document.getElementById('pad-example')!.onclick = () => pad!.example();
+  const ex = document.getElementById('pad-example')!;
+  ex.onclick = () => {
+    pad!.example();
+    ex.textContent = `example: ${pad!.exampleName}`;
+  };
+}
+
+// Margin sketches, like a notebook someone doodled in during class.
+// 'gutter' ones sit outside the content column (wide screens only).
+const sec = (sel: string) => document.querySelector<HTMLElement>(sel);
+const margins: [string, Parameters<typeof placeDoodles>[1]][] = [
+  ['#draw', [
+    { id: 'cat', pos: { top: '20px', left: '-165px' }, size: 150, rot: -7, cls: 'gutter', label: true },
+    { id: 'cactus', pos: { top: '640px', right: '-165px' }, size: 150, rot: 6, cls: 'gutter', label: true },
+  ]],
+  ['#leaderboard', [{ id: 'wizard', pos: { top: '30px', left: '-165px' }, size: 150, rot: -5, cls: 'gutter', label: true }]],
+  ['#features', [
+    { id: 'octopus', pos: { top: '0px', left: '-165px' }, size: 150, rot: 6, cls: 'gutter', label: true },
+    { id: 'alien', pos: { bottom: '40px', right: '-165px' }, size: 150, rot: -6, cls: 'gutter', label: true },
+  ]],
+  ['#how', [{ id: 'dino', pos: { top: '0px', right: '-165px' }, size: 150, rot: 4, cls: 'gutter', label: true }]],
+  ['.final', [
+    { id: 'ghost', pos: { top: '10px', left: '-165px' }, size: 150, rot: -6, cls: 'gutter', label: true },
+    { id: 'robot', pos: { bottom: '0px', right: '-165px' }, size: 150, rot: 7, cls: 'gutter', label: true },
+  ]],
+];
+for (const [sel, items] of margins) {
+  const el = sec(sel);
+  if (el) placeDoodles(el, items);
 }
 
 // Accounts, gallery and leaderboard load separately so the hero isn't delayed.

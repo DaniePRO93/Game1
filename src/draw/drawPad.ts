@@ -4,6 +4,7 @@
  * Strokes persist in localStorage so your doodles come back next session.
  */
 import type { Pt, Stroke } from '../game/share';
+import { DOODLES } from './doodles';
 
 export type Sheet = 'enemy' | 'boss' | 'me';
 
@@ -77,9 +78,16 @@ export class DrawPad {
     this.save(this.sheet);
   }
 
-  /** Replace the active sheet with its built-in example doodle. */
+  private exampleIdx: Record<Sheet, number> = { enemy: 0, boss: 0, me: 0 };
+  /** Name of the example last put on a sheet (for the UI). */
+  exampleName = '';
+
+  /** Replace the active sheet with the next built-in example (cycles through all of them). */
   example(): void {
-    this.sheets[this.sheet] = exampleFor(this.sheet);
+    const list = examplesFor(this.sheet);
+    const i = (this.exampleIdx[this.sheet] = (this.exampleIdx[this.sheet] + 1) % list.length);
+    this.sheets[this.sheet] = list[i].strokes();
+    this.exampleName = list[i].name;
     this.redraw();
     this.save(this.sheet);
   }
@@ -227,6 +235,11 @@ function circle(cx: number, cy: number, r: number, n = 28, wob = 0): Stroke {
 
 function exampleFor(sheet: Sheet): Stroke[] {
   return sheet === 'boss' ? bossExampleStrokes() : sheet === 'me' ? heroExampleStrokes() : exampleStrokes();
+}
+
+/** Examples per sheet: the classic one first, then the ten doodles. */
+function examplesFor(sheet: Sheet): { name: string; strokes: () => Stroke[] }[] {
+  return [{ name: sheet === 'boss' ? 'The Doodler' : sheet === 'me' ? 'Pencil Kid' : 'Grumpy Guy', strokes: () => exampleFor(sheet) }, ...DOODLES];
 }
 
 /** Default "you": a grinning doodle with a cap and a pencil. */

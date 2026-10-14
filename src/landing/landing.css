@@ -1108,3 +1108,36 @@ footer {
     display: none;
   }
 }
+
+/* ── Margin doodles ─────────────────────────────── */
+.margin-doodle {
+  position: absolute;
+  pointer-events: none;
+  transform: rotate(var(--rot, 0deg));
+  opacity: 0.85;
+}
+.margin-doodle canvas {
+  display: block;
+}
+.margin-doodle-label {
+  text-align: center;
+  font-size: 16px;
+  line-height: 20px;
+  color: var(--ink);
+  opacity: 0.75;
+}
+/* Gutter doodles only where there's room beside the content column. */
+.margin-doodle.gutter {
+  display: none;
+}
+@media (min-width: 1580px) {
+  .margin-doodle.gutter {
+    display: block;
+  }
+}
+.monster-grid .empty {
+  grid-column: 1 / -1;
+}
+.monster-card.starter .m-by {
+  font-style: italic;
+}

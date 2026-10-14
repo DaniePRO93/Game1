@@ -13,6 +13,7 @@ import { MAPS, MapId, mapInfo } from './world/level';
 import { Input } from './game/input';
 import { PostFX } from './render/postfx';
 import { Hud } from './ui/hud';
+import { placeDoodles } from './ui/marginDoodles';
 import { Screen, initVersus } from './versusUi';
 
 // All colors in this project are authored as final display values.
@@ -335,7 +336,23 @@ function startGame(fresh: boolean): void {
 
 $('btn-undo').onclick = () => pad.undo();
 $('btn-clear').onclick = () => pad.clear();
-$('btn-example').onclick = () => pad.example();
+$('btn-example').onclick = () => {
+  pad.example();
+  $('btn-example').textContent = `example: ${pad.exampleName}`;
+};
+
+// Doodles taped around the menus (wide screens only, see .margin-doodle.note).
+placeDoodles(document.querySelector<HTMLElement>('#menu .main-sheet')!, [
+  { id: 'robot', pos: { top: '-10px', left: '-185px' }, size: 150, rot: -8, cls: 'note' },
+  { id: 'ghost', pos: { bottom: '-20px', left: '-165px' }, size: 130, rot: 7, cls: 'note' },
+  { id: 'dino', pos: { top: '0px', right: '-190px' }, size: 150, rot: 6, cls: 'note' },
+  { id: 'pizza', pos: { bottom: '-30px', right: '-170px' }, size: 135, rot: -7, cls: 'note' },
+]);
+placeDoodles(document.querySelector<HTMLElement>('#multi .multi-sheet')!, [
+  { id: 'alien', pos: { top: '10px', left: '-175px' }, size: 140, rot: -6, cls: 'note' },
+  { id: 'cat', pos: { bottom: '-10px', right: '-175px' }, size: 140, rot: 7, cls: 'note' },
+]);
+placeDoodles(document.querySelector<HTMLElement>('#options .options-sheet')!, [{ id: 'wizard', pos: { top: '30px', right: '-170px' }, size: 140, rot: 5, cls: 'note' }]);
 $('btn-start').onclick = () => startGame(true);
 $('btn-again').onclick = () => startGame(false);
 $('btn-redraw').onclick = () => show('solo');

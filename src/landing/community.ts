@@ -1,3 +1,4 @@
+import { DOODLES } from '../draw/doodles';
 import { PAD_H, PAD_W, paintStrokes, type DrawPad } from '../draw/drawPad';
 import { decodeShare, encodeShare } from '../game/share';
 import { initAccount, mountAccountChip, requireAccount } from '../net/accountUi';
@@ -39,25 +40,41 @@ function wirePublish(pad: DrawPad): void {
   };
 }
 
+/** Real players' monsters first; the crew's starter doodles fill the grid up to this many. */
+const GALLERY_SIZE = 16;
+
 async function loadGallery(): Promise<void> {
   const grid = document.getElementById('monster-grid');
   if (!grid) return;
-  let rows: MonsterRow[];
+  let rows: MonsterRow[] = [];
   try {
     rows = await recentMonsters(12);
   } catch {
-    grid.innerHTML = '<p class="empty">the gallery is taking a nap. try again in a bit.</p>';
-    return;
-  }
-  if (!rows.length) {
-    grid.innerHTML = '<p class="empty">no monsters yet. draw one above and hit <b>publish to gallery</b> to be the first!</p>';
-    return;
+    /* gallery offline: the starters still show */
   }
   grid.innerHTML = '';
   for (const r of rows) grid.append(await monsterCard(r));
+  // Starter doodles from the Pen Strike crew (clearly credited, not reportable).
+  const starters = await Promise.all(
+    DOODLES.slice(0, Math.max(0, GALLERY_SIZE - rows.length)).map(async (d, i) => ({
+      id: -1 - i,
+      kind: 'enemy' as const,
+      token: await encodeShare({ enemy: d.strokes(), boss: [] }),
+      name: d.name,
+      created_at: '',
+      username: 'the pen strike crew',
+    })),
+  );
+  for (const r of starters) grid.append(await monsterCard(r, true));
+  if (!rows.length) {
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.innerHTML = 'no player monsters yet. draw one above and hit <b>publish to gallery</b> to be the first!';
+    grid.append(p);
+  }
 }
 
-async function monsterCard(r: MonsterRow): Promise<HTMLElement> {
+async function monsterCard(r: MonsterRow, starter = false): Promise<HTMLElement> {
   const card = document.createElement('figure');
   card.className = 'monster-card';
   const canvas = document.createElement('canvas');
@@ -106,7 +123,9 @@ async function monsterCard(r: MonsterRow): Promise<HTMLElement> {
         report.title = (err as Error).message;
       }
     }, 'to report drawings');
-  actions.append(fight, report);
+  actions.append(fight);
+  if (!starter) actions.append(report);
+  else card.classList.add('starter');
   cap.append(name, by, actions);
   if (r.kind === 'boss') card.classList.add('boss');
   card.append(link, cap);
