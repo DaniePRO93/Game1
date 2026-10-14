@@ -57,6 +57,8 @@ export class Player implements Body {
   private eyeH = EYE;
   /** Set for one frame when a movement event happens (for sounds). */
   event: 'jump' | 'airjump' | 'slide' | 'land' | 'launch' | null = null;
+  /** Downward speed (m/s) at the last landing, for landing shake. */
+  landImpact = 0;
 
   spawn(at: THREE.Vector3): void {
     this.pos = { x: at.x, y: at.y, z: at.z };
@@ -242,11 +244,13 @@ export class Player implements Body {
     }
 
     const wasGrounded = this.grounded;
+    const fallSpeed = -this.vel.y;
     moveBody(this, boxes, this.vel.x * dt, this.vel.y * dt, this.vel.z * dt, STEP);
     if (this.grounded) this.airJumpsLeft = this.airJumps;
     if (this.grounded && !wasGrounded) {
       this.landGrace = LAND_GRACE;
       if (!this.event) this.event = 'land';
+      this.landImpact = Math.max(0, fallSpeed);
     }
     this.speed = Math.hypot(this.vel.x, this.vel.z);
 

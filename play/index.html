@@ -37,10 +37,12 @@
       <div id="hud-spectate"></div>
       <div id="hud-feed"></div>
       <div id="hud-banner"></div>
+      <div id="hud-nums"></div>
       <div id="hud-crosshair"></div>
       <div id="hud-hitmark"></div>
       <div id="hud-scope" style="display: none"></div>
       <div id="hud-hint"></div>
+      <div id="hud-flash"></div>
       <div class="bl">
         <div class="hp-row">
           <span class="lbl">HP</span>
@@ -140,6 +142,9 @@
       <div class="sheet small-sheet options-sheet">
         <div class="screen-top"><button class="back" data-back="menu">← menu</button><h2>options</h2></div>
         <label class="sens"><span>aim sensitivity</span><input id="sens-menu" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
+        <label class="sens"><span>screen shake</span><input id="shake-menu" class="shake-input" type="range" min="0" max="1" step="0.05" value="0.6" /><output class="shake-val">60%</output></label>
+        <p id="shake-reduced" class="small reduced-note" style="display: none">your system asks for reduced motion, so shake is kept extra gentle</p>
+        <label class="toggle"><input type="checkbox" id="dmg-nums" checked /> <span>damage numbers</span></label>
         <label class="toggle"><input type="checkbox" id="color-mode" /> <span>color mode in single player (overrides the map's look)</span></label>
         <ul class="controls">
           <li><b>WASD</b> move · <b>SPACE</b> jump, again in the air</li>
@@ -202,6 +207,7 @@
       <div class="sheet small-sheet">
         <h2 id="pause-title">paused</h2>
         <label class="sens"><span>aim sensitivity</span><input id="sens-pause" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
+        <label class="sens"><span>screen shake</span><input id="shake-pause" class="shake-input" type="range" min="0" max="1" step="0.05" value="0.6" /><output class="shake-val">60%</output></label>
         <button id="btn-resume" class="big">click to resume</button>
         <button id="btn-quit">quit to menu</button>
       </div>

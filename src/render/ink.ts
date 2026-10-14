@@ -277,7 +277,9 @@ export function doodleMaterial(map: THREE.Texture, ink: THREE.Color): THREE.Shad
         float a = max(ink, t.g);
         if (a < 0.35) discard;
         vec3 col = mix(paper, inkColor, smoothstep(0.15, 0.6, ink));
-        col = mix(col, vec3(0.95, 0.35, 0.2), flash * 0.7);
+        // Cartoon hit flash: pure white for the first frames, then a yellow afterglow.
+        vec3 flashCol = mix(vec3(1.0, 0.86, 0.22), vec3(1.0), smoothstep(0.55, 0.75, flash));
+        col = mix(col, flashCol, smoothstep(0.0, 0.2, flash));
         // Pen tip line at the reveal edge.
         if (reveal < 0.999 && vUv.y > reveal - 0.012) col = inkColor;
         gl_FragColor = vec4(col, opacity);
@@ -287,3 +289,231 @@ export function doodleMaterial(map: THREE.Texture, ink: THREE.Color): THREE.Shad
     transparent: false,
   });
 }
+
+// ── Game-feel effects (muzzle flashes, sparks, confetti, shells) ──────────
+// All drawn with wobbly pen strokes so they sit in the notebook look.
+
+const PEN = '#2a2e85';
+
+/** A closed shape through `pts`, each point nudged a little so it looks hand-drawn. */
+function wobblyPath(c: CanvasRenderingContext2D, pts: [number, number][], wob = 1.5): void {
+  c.beginPath();
+  pts.forEach(([x, y], i) => {
+    const px = x + rnd(-wob, wob);
+    const py = y + rnd(-wob, wob);
+    if (i === 0) c.moveTo(px, py);
+    else c.lineTo(px, py);
+  });
+  c.closePath();
+}
+
+/** Points of a star with `n` spikes between radius `r0` (inner) and `r1` (outer). */
+function starPts(n: number, r0: number, r1: number, jag = 0.25): [number, number][] {
+  const out: [number, number][] = [];
+  const rot = rnd(0, Math.PI);
+  for (let i = 0; i < n * 2; i++) {
+    const a = rot + (i / (n * 2)) * Math.PI * 2;
+    const r = i % 2 ? r0 * rnd(1 - jag, 1 + jag) : r1 * rnd(1 - jag, 1);
+    out.push([Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  return out;
+}
+
+const hsl = (h: number, s: number, l: number) => `hsl(${Math.round(h * 360)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`;
+
+/** Kinds of cartoon muzzle flash. */
+export type FlashStyle = 'pop' | 'star' | 'bang' | 'ring' | 'zap';
+
+/**
+ * Hand-drawn muzzle flash in a gun's own colors: `hues` are the gun's paint
+ * hues (outer fill, inner fill). A few random variants per gun.
+ */
+export function flashTex(style: FlashStyle, hues: number[]): THREE.CanvasTexture {
+  const outer = hsl(hues[0] ?? 0.1, 0.95, 0.6);
+  const inner = hsl(hues[1] ?? hues[0] ?? 0.14, 0.95, 0.75);
+  return canvasTex(128, 128, (c) => {
+    c.translate(64, 64);
+    c.lineWidth = 4;
+    c.strokeStyle = PEN;
+    switch (style) {
+      case 'pop':
+        wobblyPath(c, starPts(6, 22, 40, 0.15));
+        c.fillStyle = outer;
+        c.fill();
+        c.stroke();
+        c.beginPath();
+        c.arc(0, 0, 13, 0, Math.PI * 2);
+        c.fillStyle = '#fffbe6';
+        c.fill();
+        break;
+      case 'star':
+        wobblyPath(c, starPts(9, 20, 60, 0.35));
+        c.fillStyle = outer;
+        c.fill();
+        c.stroke();
+        wobblyPath(c, starPts(6, 10, 28, 0.3));
+        c.fillStyle = inner;
+        c.fill();
+        break;
+      case 'bang': {
+        // Comic "BANG" burst: fat irregular cloud with lettering.
+        wobblyPath(c, starPts(12, 40, 62, 0.2), 2.5);
+        c.fillStyle = outer;
+        c.fill();
+        c.lineWidth = 5;
+        c.stroke();
+        wobblyPath(c, starPts(10, 28, 42, 0.2), 2);
+        c.fillStyle = inner;
+        c.fill();
+        c.rotate(rnd(-0.3, 0.3));
+        c.font = '30px Bangers, Impact, sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.lineWidth = 5;
+        c.strokeStyle = '#fffbe6';
+        c.strokeText('BANG', 0, 2);
+        c.fillStyle = PEN;
+        c.fillText('BANG', 0, 2);
+        break;
+      }
+      case 'ring':
+        // Shock ring with speed lines shooting out.
+        c.lineWidth = 3;
+        for (let i = 0; i < 14; i++) {
+          const a = (i / 14) * Math.PI * 2 + rnd(-0.1, 0.1);
+          const r0 = rnd(34, 40);
+          c.beginPath();
+          c.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+          c.lineTo(Math.cos(a) * rnd(52, 62), Math.sin(a) * rnd(52, 62));
+          c.stroke();
+        }
+        c.lineWidth = 7;
+        c.strokeStyle = outer;
+        c.beginPath();
+        c.ellipse(0, 0, 28, 28, 0, 0, Math.PI * 2);
+        c.stroke();
+        c.lineWidth = 2.5;
+        c.strokeStyle = PEN;
+        c.beginPath();
+        c.ellipse(0, 0, 32, 31, rnd(0, 3), 0, Math.PI * 2);
+        c.stroke();
+        c.beginPath();
+        c.arc(0, 0, 14, 0, Math.PI * 2);
+        c.fillStyle = inner;
+        c.fill();
+        c.stroke();
+        break;
+      case 'zap':
+        // Lightning zigzags crackling out of a bright core.
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + rnd(-0.3, 0.3);
+          const pts: [number, number][] = [[0, 0]];
+          let r = 0;
+          let side = 1;
+          while (r < 56) {
+            r += rnd(8, 14);
+            side = -side;
+            const off = side * rnd(5, 10);
+            pts.push([Math.cos(a) * r - Math.sin(a) * off, Math.sin(a) * r + Math.cos(a) * off]);
+          }
+          c.beginPath();
+          pts.forEach(([x, y], j) => (j ? c.lineTo(x, y) : c.moveTo(x, y)));
+          c.lineWidth = 8;
+          c.strokeStyle = PEN;
+          c.stroke();
+          c.lineWidth = 4;
+          c.strokeStyle = i % 2 ? outer : inner;
+          c.stroke();
+        }
+        c.beginPath();
+        c.arc(0, 0, 16, 0, Math.PI * 2);
+        c.fillStyle = '#ffffff';
+        c.fill();
+        c.lineWidth = 3;
+        c.strokeStyle = PEN;
+        c.stroke();
+        break;
+    }
+  });
+}
+
+/** Little ink-outlined smoke puff (paper colored, drifts off the muzzle). */
+export const puffTex = canvasTex(64, 64, (c) => {
+  c.fillStyle = 'rgba(247,244,236,0.9)';
+  c.strokeStyle = 'rgba(42,46,133,0.75)';
+  c.lineWidth = 3;
+  c.beginPath();
+  for (const [x, y, r] of [
+    [24, 36, 13],
+    [38, 30, 15],
+    [34, 42, 11],
+  ]) {
+    c.moveTo(x + r, y);
+    c.arc(x, y, r, 0, Math.PI * 2);
+  }
+  c.fill();
+  for (const [x, y, r, a0, a1] of [
+    [24, 36, 13, 1.6, 4.4],
+    [38, 30, 15, 3.6, 7.0],
+    [34, 42, 11, 0.2, 2.6],
+  ]) {
+    c.beginPath();
+    c.arc(x, y, r, a0, a1);
+    c.stroke();
+  }
+});
+
+/** White 5-point star with a gray rim; tinted per use (hit sparks). */
+export const sparkTex = canvasTex(64, 64, (c) => {
+  c.translate(32, 32);
+  wobblyPath(c, starPts(5, 10, 26, 0.1), 1);
+  c.fillStyle = '#ffffff';
+  c.fill();
+  c.lineWidth = 3;
+  c.strokeStyle = '#5a5a5a';
+  c.stroke();
+});
+
+/** Ink scribble confetti: squiggles, loops and zigzags in white (tinted per use). */
+export const scribbleTexes: THREE.CanvasTexture[] = Array.from({ length: 4 }, (_, kind) =>
+  canvasTex(64, 64, (c) => {
+    c.strokeStyle = '#ffffff';
+    c.lineWidth = 5;
+    c.beginPath();
+    if (kind === 0) {
+      for (let x = 8; x <= 56; x += 2) c.lineTo(x, 32 + Math.sin(x * 0.35) * 10);
+    } else if (kind === 1) {
+      for (let i = 0; i <= 40; i++) {
+        const a = (i / 40) * Math.PI * 5;
+        const r = 4 + i * 0.6;
+        c.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r);
+      }
+    } else if (kind === 2) {
+      for (let i = 0; i <= 6; i++) c.lineTo(8 + i * 8, i % 2 ? 18 : 46);
+    } else {
+      for (let i = 0; i <= 3; i++) {
+        c.moveTo(14 + i * 9, 50);
+        c.quadraticCurveTo(10 + i * 9, 30, 20 + i * 9, 12);
+      }
+    }
+    c.stroke();
+  }),
+);
+
+/** Rolled-paper shell casing (white with a pen outline; tinted per gun). */
+export const shellTex = canvasTex(32, 64, (c) => {
+  c.fillStyle = '#ffffff';
+  c.strokeStyle = '#3a3a3a';
+  c.lineWidth = 3;
+  c.beginPath();
+  c.roundRect(8, 6, 16, 52, 4);
+  c.fill();
+  c.stroke();
+  c.lineWidth = 2;
+  c.beginPath();
+  c.moveTo(9, 16);
+  c.lineTo(23, 20);
+  c.moveTo(9, 30);
+  c.lineTo(23, 34);
+  c.stroke();
+});

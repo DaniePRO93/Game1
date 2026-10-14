@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DoodleSprite, maskAt } from '../draw/sprite';
 import { doodleMaterial, shadowTex, spriteMaterial } from '../render/ink';
+import { Spring } from './juice';
 
 /** How far behind real time remote players are drawn, to smooth out jitter. */
 const INTERP_MS = 100;
@@ -42,6 +43,11 @@ export class RemotePlayer {
   userToken: string | null = null;
   private snaps: Snap[] = [];
   private flash = 0;
+  /** Local-only hit squash (never sent over the network). */
+  private squash = new Spring(320, 13);
+  /** Width scale without the squash, so hit tests never depend on the juice. */
+  private baseScaleX = 1;
+  private bob = 0;
   private walkPhase = 0;
   private lastPos = new THREE.Vector3();
 
@@ -96,8 +102,10 @@ export class RemotePlayer {
     if (prev && !prev.alive && s.alive) this.snaps = [this.snaps[this.snaps.length - 1]];
   }
 
-  hitFlash(): void {
+  /** Local hit reaction: white flash and a squash. `push` grows the squash for heavy guns. */
+  hitFlash(push = 1): void {
     this.flash = 1;
+    this.squash.impulse(4 + push * 1.2);
   }
 
   /** Mark dead right away (the death message beats the next snapshot). */
@@ -146,12 +154,14 @@ export class RemotePlayer {
     this.walkPhase += moved * 2.4;
     this.flash = Math.max(0, this.flash - dt * 6);
     this.mat.uniforms.flash.value = this.flash;
+    const sq = Math.max(-0.4, Math.min(0.5, this.squash.step(dt) * 0.09));
 
     this.facing = Math.atan2(camera.x - this.pos.x, camera.z - this.pos.z);
     this.height = this.sliding ? SLIDE_H : STAND_H;
-    const bob = this.sliding ? 0 : Math.abs(Math.sin(this.walkPhase)) * 0.08;
-    this.mesh.position.set(this.pos.x, this.pos.y + bob, this.pos.z);
-    this.mesh.scale.set(this.sliding ? 1.25 : 1, this.height / STAND_H, 1);
+    this.bob = this.sliding ? 0 : Math.abs(Math.sin(this.walkPhase)) * 0.08;
+    this.mesh.position.set(this.pos.x, this.pos.y + this.bob, this.pos.z);
+    this.baseScaleX = this.sliding ? 1.25 : 1;
+    this.mesh.scale.set(this.baseScaleX * (1 + sq), (this.height / STAND_H) * (1 - sq * 0.8), 1);
     this.mesh.rotation.set(0, this.facing, this.sliding ? 0.25 : Math.sin(this.walkPhase) * 0.07);
     this.shadow.position.set(this.pos.x, this.pos.y + 0.03, this.pos.z);
     this.tag.position.set(this.pos.x, this.pos.y + this.height + 0.45, this.pos.z);
@@ -179,9 +189,9 @@ export class RemotePlayer {
     const hy = o.y + d.y * t;
     const hz = o.z + d.z * t;
     const lx = (hx - this.pos.x) * Math.cos(this.facing) - (hz - this.pos.z) * Math.sin(this.facing);
-    const w = this.width * this.mesh.scale.x;
+    const w = this.width * this.baseScaleX;
     const u = lx / w + 0.5;
-    const v = (hy - this.mesh.position.y) / this.height;
+    const v = (hy - this.pos.y - this.bob) / this.height;
     if (v < 0 || v > 1 || u < 0 || u > 1) return null;
     const core = Math.abs(lx) < 0.22;
     if (!core && !maskAt(this.sprite, u, v)) return null;

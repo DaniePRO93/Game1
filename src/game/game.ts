@@ -11,7 +11,26 @@ import { Combo } from './combo';
 import { DIFFICULTIES, Difficulty, DifficultyDef, scaleQueue } from './difficulty';
 import { DoodleStats, doodleStats } from './doodleStats';
 import { ENEMY_DEFS, Enemy, EnemyContext } from './enemy';
-import { FX } from './fx';
+import { Doodled, FX } from './fx';
+import {
+  HARD_LANDING,
+  HITSTOP_BIG,
+  HITSTOP_KILL,
+  Hitstop,
+  KNOCKBACK,
+  RECOIL,
+  SHAKE_MAX_OFFSET,
+  SHAKE_MAX_ROT,
+  Spring,
+  TRAUMA_HURT,
+  TRAUMA_INK_BOMB,
+  Tally,
+  Trauma,
+  fliesOnKill,
+  panFor,
+  shakeNoise,
+  tallyHit,
+} from './juice';
 import { RemotePlayer } from './remotePlayer';
 import { PaintGrid } from './paintGrid';
 import { TEAM_COLORS } from '../net/versus';
@@ -73,6 +92,18 @@ const paintColors = new Map<number, THREE.Color>();
 const teamColors = TEAM_COLORS.map((c) => new THREE.Color(c));
 function teamColor(team: number): THREE.Color {
   return teamColors[team] ?? teamColors[0];
+}
+/** One target's share of a shot: merged pellets, where it was first hit and the shot direction. */
+type ShotHit = Tally & { dir: THREE.Vector3; at: THREE.Vector3 };
+const shellColors = new Map<WeaponId, THREE.Color>();
+/** Paper shells take a pale wash of the gun's main color. */
+function shellColor(def: WeaponDef): THREE.Color {
+  let c = shellColors.get(def.id);
+  if (!c) {
+    c = new THREE.Color().setHSL(def.paint[0], 0.7, 0.82);
+    shellColors.set(def.id, c);
+  }
+  return c;
 }
 function paintColor(def: WeaponDef): THREE.Color {
   const h = def.paint[Math.floor(Math.random() * def.paint.length)];
@@ -161,6 +192,18 @@ export class Game {
   private time = 0;
   /** Versus kill/death events for the HUD feed. */
   onVersusEvent: (text: string) => void = () => {};
+
+  // ── Game feel ──
+  /** Screen shake strength from Options (0..1, already lowered for reduced motion). */
+  shakeScale = 0.6;
+  private trauma = new Trauma();
+  /** Freeze frames (single player only). */
+  private hitstop = new Hitstop();
+  /** Camera shove away from whatever hit me (local x offset, roll). */
+  private nudgeX = new Spring(140, 12);
+  private nudgeRoll = new Spring(140, 12);
+  private hurtAngle = 0;
+  private tmpV = new THREE.Vector3();
 
   constructor(private hud: Hud, private sfx: Sfx, private input: Input) {
     this.level = buildLevel();
@@ -264,6 +307,7 @@ export class Game {
     this.pickups = [];
     this.projectiles.clear();
     this.fx.clear();
+    this.resetJuice();
     this.weapons = WEAPONS.map((d) => new WeaponState(d));
     this.switchWeapon(0, true);
     this.applyMods();
@@ -333,36 +377,21 @@ export class Game {
     this.clock.update(realDt, slow);
     this.sfx.setSlowmo(this.clock.slowAmount);
 
-    const wDt = this.clock.worldDt(realDt);
+    // Freeze frames stop the world (enemies, shots, debris) but never the player's own aim.
+    const wDt = this.clock.worldDt(realDt) * this.hitstop.step(realDt);
     const pDt = this.clock.playerDt(realDt);
 
     this.player.look(input, this.zoomed ? 0.35 : this.aiming ? 0.65 : 1);
     this.player.update(pDt, input, this.level.boxes);
     this.player.applyTriggers(this.level.triggers, pDt, this.level.boxes);
     this.level.update(realDt);
-    switch (this.player.event) {
-      case 'launch':
-        this.sfx.airJump();
-        this.fx.spray(this.player.eye(new THREE.Vector3()).setY(this.player.pos.y + 0.1), new THREE.Vector3(0, 1, 0), ERASER_PINK, 6, 0.06);
-        break;
-      case 'jump':
-        this.sfx.jump();
-        break;
-      case 'airjump':
-        this.sfx.airJump();
-        this.fx.spray(this.player.eye(new THREE.Vector3()).setY(this.player.pos.y + 0.1), new THREE.Vector3(0, 1, 0), ERASER_PINK, 4, 0.05);
-        break;
-      case 'slide':
-        this.sfx.slide();
-        break;
-      case 'land':
-        this.sfx.land();
-        break;
-    }
+    this.movementEvents();
     this.player.applyCamera(this.camera);
     this.camera.updateMatrixWorld(true);
 
     this.updateWeapons(pDt);
+    // Shake goes on after shooting so it never moves where bullets go.
+    this.applyShake(realDt);
 
     const eye = this.player.eye(new THREE.Vector3());
     const ctx: EnemyContext = {
@@ -374,7 +403,7 @@ export class Game {
       fire: (from, dir, e) => {
         this.projectiles.spawn(from, dir, e.def.projSpeed, e.def.damage);
         this.fx.flash(from, e.def.kind === 'boss' ? 1.4 : 0.6, false);
-        this.sfx.enemyShot();
+        this.enemyShotSound(from);
       },
       onBossPhase: (boss) => {
         this.hud.banner('THE DOODLER SCRIBBLES MORE!', 1.8);
@@ -392,11 +421,15 @@ export class Game {
       this.level.boxes,
       (p) => this.player.contains(p),
       (p, box) => this.fx.splat(p, box, 0.45),
-      (vel) => this.hud.damageArrow(this.angleTo(this.player.pos.x - vel.x, this.player.pos.z - vel.z)),
+      (vel) => {
+        this.hurtAngle = this.angleTo(this.player.pos.x - vel.x, this.player.pos.z - vel.z);
+        this.hud.damageArrow(this.hurtAngle);
+      },
     );
     if (dmg > 0) {
       this.player.hp -= dmg;
       this.damageFlash = 1;
+      this.hurtJolt(this.hurtAngle);
       this.sfx.hurt();
       this.streak = 0;
       if (this.player.hp <= 0) this.die();
@@ -415,9 +448,108 @@ export class Game {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-realDt * 20));
       this.camera.updateProjectionMatrix();
     }
-    const w = this.weapon;
-    this.viewmodel.update(pDt, this.player.grounded ? this.player.speed : 0, w.reloading > 0 ? 1 - w.reloading / w.def.reload : 0, this.zoomed, this.aiming ? 1 : 0, this.spin);
+    this.updateViewmodel(pDt);
+    this.hud.nums.update(realDt, this.camera, innerWidth, innerHeight);
     this.pushHud();
+  }
+
+  private updateViewmodel(dt: number): void {
+    const w = this.weapon;
+    // Railgun winds up as its next shot gets ready.
+    const charge = w.def.id === 'railgun' ? 1 - Math.min(1, w.cooldown / (w.def.interval / w.rateMult)) : 0;
+    this.viewmodel.update(dt, this.player.grounded ? this.player.speed : 0, w.reloading > 0 ? 1 - w.reloading / w.def.reload : 0, this.zoomed, this.aiming ? 1 : 0, this.spin, charge);
+  }
+
+  /** Sounds and puffs for jumps, pads and landings (solo and versus). */
+  private movementEvents(): void {
+    const feet = () => this.player.eye(this.tmpV).setY(this.player.pos.y + 0.1);
+    switch (this.player.event) {
+      case 'launch':
+        this.sfx.boing();
+        this.fx.spray(feet(), new THREE.Vector3(0, 1, 0), ERASER_PINK, 6, 0.06);
+        break;
+      case 'jump':
+        this.sfx.jump();
+        break;
+      case 'airjump':
+        this.sfx.airJump();
+        this.fx.spray(feet(), new THREE.Vector3(0, 1, 0), ERASER_PINK, 4, 0.05);
+        break;
+      case 'slide':
+        this.sfx.slide();
+        break;
+      case 'land': {
+        const hard = this.player.landImpact > HARD_LANDING;
+        this.sfx.land(hard);
+        if (hard) this.trauma.add(Math.min(0.3, 0.12 + (this.player.landImpact - HARD_LANDING) * 0.02));
+        break;
+      }
+    }
+  }
+
+  // ── Game feel ────────────────────────────────────────────────────────
+  /**
+   * Trauma shake plus the hurt shove, on top of the player's camera. Off
+   * while aiming or scoped so precise shots never fight the camera.
+   */
+  private applyShake(realDt: number): void {
+    this.trauma.step(realDt);
+    const nx = this.nudgeX.step(realDt);
+    const nr = this.nudgeRoll.step(realDt);
+    const k = this.zoomed || this.aiming ? 0 : this.shakeScale;
+    const s = this.trauma.shake * k;
+    if (s < 1e-5 && Math.abs(nx * k) < 1e-4 && Math.abs(nr * k) < 1e-4) return;
+    const t = this.time;
+    const cam = this.camera;
+    cam.rotation.x += SHAKE_MAX_ROT * s * shakeNoise(t, 1);
+    cam.rotation.y += SHAKE_MAX_ROT * s * shakeNoise(t, 2);
+    cam.rotation.z += SHAKE_MAX_ROT * s * shakeNoise(t, 3) + nr * k;
+    cam.translateX(SHAKE_MAX_OFFSET * s * shakeNoise(t, 4) + nx * k);
+    cam.translateY(SHAKE_MAX_OFFSET * s * shakeNoise(t, 5));
+    cam.updateMatrixWorld(true);
+  }
+
+  /** Getting hit: medium shake, a shove away from the source and a jolt on the HP bar. */
+  private hurtJolt(angle: number): void {
+    this.trauma.add(TRAUMA_HURT);
+    const side = Math.sin(angle);
+    this.nudgeX.x -= side * 0.07;
+    this.nudgeRoll.x += side * 0.035;
+    this.hud.hurt();
+  }
+
+  private enemyShotSound(from: THREE.Vector3): void {
+    const d = from.distanceTo(this.player.pos);
+    this.sfx.enemyShot(panFor(this.angleTo(from.x, from.z)), Math.max(0.35, Math.min(1, 14 / Math.max(1, d))));
+  }
+
+  private resetJuice(): void {
+    this.trauma.value = 0;
+    this.hitstop.left = 0;
+    this.nudgeX.reset();
+    this.nudgeRoll.reset();
+    this.hud.nums.clear();
+  }
+
+  /** Freeze frame in solo; versus never pauses, so it gets a white flash instead. */
+  private impact(seconds: number, strong: boolean): void {
+    if (this.versus) this.hud.whiteFlash(strong);
+    else this.hitstop.trigger(seconds);
+  }
+
+  /** How a doodle goes when it dies: a quick pop, a head flying off, or the whole thing launched. */
+  private deathFx(target: Doodled, head: boolean, dir: THREE.Vector3, erased: boolean, fly: boolean, gun: WeaponDef): void {
+    const boss = target.def.kind === 'boss';
+    const confetti = [target.def.ink, paintColor(gun), paintColor(gun)];
+    if (fly && !head && !boss) {
+      const push = target.def.kind === 'heavy' ? 4 : 8;
+      const flat = this.tmpV.set(dir.x, 0, dir.z).normalize().multiplyScalar(push);
+      this.fx.flyingKill(target, flat, confetti, erased, ERASER_PINK);
+    } else if (erased && !head) {
+      this.fx.erase(target, ERASER_PINK);
+    } else {
+      this.fx.popKill(target, dir.clone().multiplyScalar(boss ? 2 : 5), confetti, head);
+    }
   }
 
   // ── Weapons ───────────────────────────────────────────────────────────
@@ -482,7 +614,6 @@ export class Game {
     st.rateMult = this.mods.fireRate;
     this.weapons.push(st);
     this.switchWeapon(this.weapons.length - 1, true);
-    this.viewmodel.fire(0); // no-op kick; setWeapon already played the swap
     this.hud.banner(`KILLSTREAK ×${this.streak}: ${def.name}!`, 2.2);
     this.hud.comic('ON FIRE!', true);
     this.hud.hint(def.hint, 3);
@@ -565,8 +696,8 @@ export class Game {
     const maxHits = 1 + (def.pierce ?? 0);
     const headMult = def.headMult ?? HEADSHOT_MULT;
 
-    const hits = new Map<Enemy, { dmg: number; head: boolean; dir: THREE.Vector3 }>();
-    const remoteHits = new Map<RemotePlayer, { dmg: number; head: boolean }>();
+    const hits = new Map<Enemy, ShotHit>();
+    const remoteHits = new Map<RemotePlayer, ShotHit>();
     const ends: number[][] = [];
     for (let p = 0; p < def.pellets; p++) {
       const a = Math.random() * Math.PI * 2;
@@ -592,24 +723,17 @@ export class Game {
       const taken = cands.slice(0, maxHits);
       for (const c of taken) {
         const at = origin.clone().addScaledVector(dir, c.t);
+        const make = (): ShotHit => ({ dmg: 0, head: false, count: 0, dir, at: at.clone() });
         if (c.r) {
           const dmg = damageAt(def, c.t) * (c.head ? headMult : 1) * VERSUS_DAMAGE[def.id];
-          const prev = remoteHits.get(c.r);
-          if (prev) {
-            prev.dmg += dmg;
-            prev.head ||= c.head;
-          } else remoteHits.set(c.r, { dmg, head: c.head });
+          tallyHit(remoteHits, c.r, dmg, c.head, make);
           this.fx.spray(at, dir, c.r.ink, def.pellets > 1 ? 2 : 5);
         } else if (c.e) {
           const mult = (c.head ? headMult + this.mods.headshot : 1) * (c.e.def.heavy ? def.heavyMult : 1) * this.mods.damage;
-          const dmg = damageAt(def, c.t) * mult;
-          const prev = hits.get(c.e);
-          if (prev) {
-            prev.dmg += dmg;
-            prev.head ||= c.head;
-          } else hits.set(c.e, { dmg, head: c.head, dir });
+          tallyHit(hits, c.e, damageAt(def, c.t) * mult, c.head, make);
           this.fx.spray(at, dir, c.e.def.ink, def.pellets > 1 ? 2 : 5);
         }
+        this.fx.sparks(at, dir, paintColor(def), def.pellets > 1 ? 1 : 3);
         this.paintBehind(at, dir, def);
       }
       const stopped = taken.length >= maxHits;
@@ -626,17 +750,31 @@ export class Game {
       }
     }
 
+    // Shotgun pellets push in proportion to how many landed.
+    const pushOf = (h: ShotHit) => KNOCKBACK[def.id] * (def.pellets > 1 ? Math.min(1, (h.count / def.pellets) * 1.6) : 1);
+    let kills = 0;
+    let bigKill = false;
     for (const [e, h] of hits) {
+      this.hud.nums.spawn(h.at, h.dmg, h.head);
       const killed = e.damage(h.dmg);
-      if (killed) this.onKill(e, h.head, h.dir);
-      else if (h.head) this.sfx.headshot();
-      else this.sfx.hit();
+      if (killed) {
+        kills++;
+        bigKill ||= h.head;
+        this.onKill(e, h.head, h.dir, false, fliesOnKill(def.id));
+      } else {
+        e.react(h.dir, pushOf(h));
+        if (h.head) this.sfx.headshot();
+        else this.sfx.hit();
+      }
       this.hud.hitmarker(h.head, killed);
     }
+    // Multi-kills and railgun skewers hold the freeze a little longer.
+    if (kills >= 2 || bigKill || (def.id === 'railgun' && hits.size >= 2)) this.impact(HITSTOP_BIG, true);
     if (this.versus) {
       for (const [rp, h] of remoteHits) {
         this.versus.sendHit(rp.id, Math.round(h.dmg), h.head, false);
-        rp.hitFlash();
+        rp.hitFlash(pushOf(h));
+        this.hud.nums.spawn(h.at, Math.round(h.dmg), h.head);
         if (h.head) this.sfx.headshot();
         else this.sfx.hit();
         this.hud.hitmarker(h.head, false);
@@ -650,10 +788,22 @@ export class Game {
       this.brrrt = true;
       this.hud.comic('BRRRT!');
     }
-    this.fx.flash(muzzle, def.id === 'shotgun' ? 0.5 : def.id === 'sniper' ? 0.55 : 0.32);
-    this.viewmodel.fire(def.recoil * 12);
+    if (!this.zoomed) this.fx.muzzle(def.id, def.paint, muzzle, fwd, this.aiming ? 0.55 : 1);
+    this.ejectShell(def, muzzle, fwd, right, up);
+    this.viewmodel.fire();
+    const r = RECOIL[def.id];
+    this.trauma.add(r.trauma);
+    this.hud.kickCrosshair(r.bloom);
     this.player.recoil = Math.min(0.2, this.player.recoil + def.recoil);
     this.sfx.shot(def.id);
+  }
+
+  /** Paper shell casing flipping out to the right of the gun. */
+  private ejectShell(def: WeaponDef, muzzle: THREE.Vector3, fwd: THREE.Vector3, right: THREE.Vector3, up: THREE.Vector3): void {
+    if (def.id === 'railgun' || (def.id === 'minigun' && Math.random() < 0.5)) return;
+    const at = muzzle.clone().addScaledVector(fwd, -0.3).addScaledVector(right, 0.05).addScaledVector(up, 0.03);
+    const vel = right.clone().multiplyScalar(1.6 + Math.random()).addScaledVector(up, 1.6 + Math.random()).addScaledVector(fwd, -0.4).add(this.player.vel);
+    this.fx.shell(at, vel, shellColor(def), this.player.pos.y);
   }
 
   /** Eraser sword: hits every enemy in a short frontal arc, lunges forward. */
@@ -694,9 +844,11 @@ export class Game {
         dir.divideScalar(len || 1);
         if (raycastBoxes(this.level.boxes, eye, dir, Math.max(0, len - 0.4))) continue;
         this.fx.spray(to, dir, ERASER_PINK, 6, 0.06);
-        this.versus.sendHit(rp.id, Math.round(def.damage * VERSUS_DAMAGE.eraser), false, true);
-        rp.hitFlash();
-        this.sfx.hit();
+        const vd = Math.round(def.damage * VERSUS_DAMAGE.eraser);
+        this.versus.sendHit(rp.id, vd, false, true);
+        rp.hitFlash(KNOCKBACK.eraser);
+        this.hud.nums.spawn(to, vd, false);
+        this.sfx.squeak();
         this.hud.hitmarker(false, false);
       }
     }
@@ -715,14 +867,18 @@ export class Game {
       dir.divideScalar(len || 1);
       if (raycastBoxes(this.level.boxes, eye, dir, Math.max(0, len - e.radius))) continue;
       this.fx.spray(to, dir, ERASER_PINK, 6, 0.06);
-      const killed = e.damage(def.damage * (e.def.heavy ? def.heavyMult : 1) * this.mods.damage);
-      if (killed) this.onKill(e, false, dir, true);
-      else this.sfx.hit();
+      const dmg = def.damage * (e.def.heavy ? def.heavyMult : 1) * this.mods.damage;
+      this.hud.nums.spawn(to, dmg, false);
+      const killed = e.damage(dmg);
+      this.sfx.squeak();
+      if (killed) this.onKill(e, false, dir, true, true);
+      else e.react(dir, KNOCKBACK.eraser);
       this.hud.hitmarker(false, killed);
     }
   }
 
-  private onKill(e: Enemy, head: boolean, dir: THREE.Vector3, erased = false): void {
+  /** `fly`: the kill launches the whole doodle (shotgun, railgun, sword). */
+  private onKill(e: Enemy, head: boolean, dir: THREE.Vector3, erased = false, fly = false): void {
     this.kills++;
     this.comicKill(head, erased);
     this.addStreakKill();
@@ -732,9 +888,9 @@ export class Game {
     this.score += Math.round(e.def.score * (head ? 1.5 : 1) * mult * this.difficulty.score);
     this.meter.onKill(head);
     if (this.mods.healOnKill) this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.mods.healOnKill);
-    if (erased) this.fx.erase(e, ERASER_PINK);
-    else this.fx.shatter(e, dir.clone().multiplyScalar(e.def.kind === 'boss' ? 2 : 5));
-    this.sfx.kill();
+    this.deathFx(e, head, dir, erased, fly, this.weapon.def);
+    this.impact(head ? HITSTOP_BIG : HITSTOP_KILL, head);
+    this.sfx.kill(e.height, head);
     this.removeEnemy(e);
     this.enemies = this.enemies.filter((x) => x !== e);
     if (this.mods.inkBomb > 0) this.inkBomb(e);
@@ -753,6 +909,7 @@ export class Game {
     at.y += dead.height * 0.5;
     this.fx.flash(at, 2.2, false);
     this.fx.spray(at, new THREE.Vector3(0, -1, 0), dead.def.ink, 10, 0.15);
+    this.trauma.add(TRAUMA_INK_BOMB * Math.min(1, 14 / Math.max(1, at.distanceTo(this.player.pos))));
     this.sfx.inkBomb();
     for (const o of [...this.enemies]) {
       if (!o.alive || !o.ready) continue;
@@ -763,7 +920,7 @@ export class Game {
   }
 
   /** Ricochet upgrade: a shot that hits a wall bounces to the nearest visible enemy within 10m. */
-  private ricochet(from: THREE.Vector3, def: WeaponState['def'], hits: Map<Enemy, { dmg: number; head: boolean; dir: THREE.Vector3 }>): void {
+  private ricochet(from: THREE.Vector3, def: WeaponState['def'], hits: Map<Enemy, ShotHit>): void {
     let best: Enemy | null = null;
     let bestD = 10;
     const target = new THREE.Vector3();
@@ -782,10 +939,8 @@ export class Game {
     target.set(best.pos.x, best.pos.y + best.height * 0.5, best.pos.z);
     const dir = target.clone().sub(from).normalize();
     this.fx.tracer(from, target);
-    const dmg = def.damage * 0.6 * this.mods.damage;
-    const prev = hits.get(best);
-    if (prev) prev.dmg += dmg;
-    else hits.set(best, { dmg, head: false, dir });
+    const at = target.clone();
+    tallyHit(hits, best, def.damage * 0.6 * this.mods.damage, false, () => ({ dmg: 0, head: false, count: 0, dir, at }));
   }
 
   // ── Upgrades ──────────────────────────────────────────────────────────
@@ -977,6 +1132,7 @@ export class Game {
     this.camera.position.y = this.player.pos.y + 1.6 - k * 1.3;
     this.camera.rotation.z = k * 0.9;
     this.fx.update(realDt * 0.3, realDt);
+    this.hud.nums.update(realDt, this.camera, innerWidth, innerHeight);
     this.damageFlash = 1 - k * 0.5;
     if (this.deathT >= 1.6 && this.deathT - realDt < 1.6) this.onDeath();
   }
@@ -992,6 +1148,7 @@ export class Game {
     this.pickups = [];
     this.projectiles.clear();
     this.fx.clear();
+    this.resetJuice();
     this.owned = {};
     this.applyMods();
     this.meter.reset();
@@ -1064,7 +1221,9 @@ export class Game {
     this.damageFlash = 1;
     this.sinceHurt = 0;
     const src = this.remotes.get(from);
-    if (src) this.hud.damageArrow(this.angleTo(src.pos.x, src.pos.z));
+    const angle = src ? this.angleTo(src.pos.x, src.pos.z) : 0;
+    if (src) this.hud.damageArrow(angle);
+    this.hurtJolt(angle);
     this.hud.comic(Math.random() < 0.5 ? 'OUCH!' : 'OOF!');
     this.sfx.hurt();
     if (this.player.hp <= 0) {
@@ -1090,15 +1249,17 @@ export class Game {
     const r = this.remotes.get(victim);
     if (r && r.alive) {
       const dir = r.pos.clone().sub(this.player.pos).setY(0.3).normalize();
-      if (erased) this.fx.erase(r, ERASER_PINK);
-      else this.fx.shatter(r, dir.multiplyScalar(5));
+      // Local-only flourish: my big guns launch them, everyone else's kills pop.
+      const mine = by === selfId;
+      this.deathFx(r, head, dir, erased, erased || (mine && fliesOnKill(this.weapon.def.id)), mine ? this.weapon.def : WEAPONS[0]);
       r.kill();
     }
     const vName = r?.name ?? 'someone';
     if (by === selfId) {
       this.comicKill(head, erased);
       this.addStreakKill();
-      this.sfx.kill();
+      this.sfx.kill(r?.height ?? 1.85, head);
+      this.impact(HITSTOP_BIG, head);
       this.hud.hitmarker(head, true);
       this.hud.hint(`you ${erased ? 'erased' : 'scribbled out'} ${vName}${head ? ' (headshot!)' : ''}`, 2);
       this.onVersusEvent(`you ${erased ? 'erased' : 'got'} ${vName}`);
@@ -1127,7 +1288,7 @@ export class Game {
       if (hit) this.paintAt(o.clone().addScaledVector(dir, hit.t), hit.box, def, 1, id);
     }
     this.fx.flash(o, weapon === 1 ? 0.5 : 0.35, false);
-    if (o.distanceTo(this.player.pos) < 60) this.sfx.enemyShot();
+    if (o.distanceTo(this.player.pos) < 60) this.enemyShotSound(o);
   }
 
   remoteSwing(id: string): void {
@@ -1186,27 +1347,11 @@ export class Game {
     this.player.look(input, this.zoomed ? 0.35 : this.aiming ? 0.65 : 1);
     this.player.update(realDt, input, this.level.boxes);
     this.player.applyTriggers(this.level.triggers, realDt, this.level.boxes);
-    switch (this.player.event) {
-      case 'launch':
-        this.sfx.airJump();
-        break;
-      case 'jump':
-        this.sfx.jump();
-        break;
-      case 'airjump':
-        this.sfx.airJump();
-        this.fx.spray(this.player.eye(new THREE.Vector3()).setY(this.player.pos.y + 0.1), new THREE.Vector3(0, 1, 0), ERASER_PINK, 4, 0.05);
-        break;
-      case 'slide':
-        this.sfx.slide();
-        break;
-      case 'land':
-        this.sfx.land();
-        break;
-    }
+    this.movementEvents();
     this.player.applyCamera(this.camera);
     this.camera.updateMatrixWorld(true);
     this.updateWeapons(realDt);
+    this.applyShake(realDt);
 
     this.spawnShield = Math.max(0, this.spawnShield - realDt);
     this.sinceHurt += realDt;
@@ -1222,8 +1367,8 @@ export class Game {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-realDt * 20));
       this.camera.updateProjectionMatrix();
     }
-    const w = this.weapon;
-    this.viewmodel.update(realDt, this.player.grounded ? this.player.speed : 0, w.reloading > 0 ? 1 - w.reloading / w.def.reload : 0, this.zoomed, this.aiming ? 1 : 0, this.spin);
+    this.updateViewmodel(realDt);
+    this.hud.nums.update(realDt, this.camera, innerWidth, innerHeight);
     this.sendSnap();
     this.pushHud();
   }

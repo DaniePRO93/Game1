@@ -1,4 +1,5 @@
 import { ALL_WEAPONS, WEAPONS, WeaponId } from '../game/weapons';
+import { DamageNumbers } from './damageNumbers';
 
 export interface HudState {
   score: number;
@@ -56,11 +57,17 @@ export class Hud {
     spectate: $('hud-spectate'),
     paintwar: $('hud-paintwar'),
     feed: $('hud-feed'),
+    hp: $('hud-hp-fill').parentElement!,
+    flash: $('hud-flash'),
   };
+  readonly nums = new DamageNumbers($('hud-nums'));
   private last = '';
   private hintTimer = 0;
   private bannerTimer = 0;
   private hitTimer = 0;
+  /** Crosshair bloom 0..1 (spreads while firing, settles back). */
+  private bloom = 0;
+  private bloomShown = -1;
 
   constructor() {
     this.el.weaponList.innerHTML = WEAPONS.map(
@@ -176,8 +183,27 @@ export class Hud {
   }
 
   hitmarker(head: boolean, kill: boolean): void {
+    // Restart the bounce animation on every hit.
+    this.el.hitmark.className = '';
+    void this.el.hitmark.offsetWidth;
     this.el.hitmark.className = `on${head ? ' head' : ''}${kill ? ' kill' : ''}`;
-    this.hitTimer = kill ? 0.25 : 0.12;
+    this.hitTimer = kill ? 0.3 : 0.16;
+  }
+
+  /** Spread the crosshair (per shot, 0..1). */
+  kickCrosshair(amount: number): void {
+    this.bloom = Math.min(1, this.bloom + amount);
+  }
+
+  /** Jolt the HP bar when hurt. */
+  hurt(): void {
+    restartAnim(this.el.hp, 'shake');
+  }
+
+  /** Quick white screen flash (versus kills, in place of a freeze frame). */
+  whiteFlash(strong = false): void {
+    this.el.flash.classList.toggle('strong', strong);
+    restartAnim(this.el.flash, 'on');
   }
 
   tick(realDt: number): void {
@@ -192,6 +218,13 @@ export class Hud {
     if (this.hitTimer > 0) {
       this.hitTimer -= realDt;
       if (this.hitTimer <= 0) this.el.hitmark.className = '';
+    }
+    // Bloom recovers quickly; only touch the DOM when it visibly changes.
+    this.bloom = Math.max(0, this.bloom - realDt * 3.5);
+    const b = Math.round(this.bloom * 50) / 50;
+    if (b !== this.bloomShown) {
+      this.bloomShown = b;
+      this.el.crosshair.style.setProperty('--bloom', String(b));
     }
   }
 
@@ -264,4 +297,11 @@ export class Hud {
     e.scope.style.display = s.zoomed ? '' : 'none';
     e.crosshair.style.display = s.zoomed ? 'none' : '';
   }
+}
+
+/** Re-trigger a one-shot CSS animation by toggling its class. */
+function restartAnim(el: HTMLElement, cls: string): void {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
 }

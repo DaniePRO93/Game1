@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { DoodleSprite, maskAt } from '../draw/sprite';
 import { INK_BLUE, INK_DARK, INK_RED, doodleMaterial, shadowTex, spriteMaterial } from '../render/ink';
 import { Box, pushCircleOut, raycastBoxes } from '../world/collision';
+import { Spring } from './juice';
 import type { EnemyKind } from './waves';
 
 export interface EnemyDef {
@@ -68,6 +69,12 @@ export class Enemy {
   private walkPhase = Math.random() * 10;
   private flash = 0;
   private bossPhase = 0;
+  /** Hit squash (+ = wide and short), springs back with a wobble. */
+  private squash = new Spring(320, 13);
+  /** Knockback slide (m/s) and the little hop that goes with it. */
+  private knock = new THREE.Vector3();
+  private hopY = 0;
+  private hopV = 0;
 
   /** Movement speed after drawing stats. */
   readonly speed: number;
@@ -107,6 +114,7 @@ export class Enemy {
     if (!this.alive) return;
     this.flash = Math.max(0, this.flash - dt * 6);
     this.mat.uniforms.flash.value = this.flash;
+    this.updateReaction(dt, ctx);
 
     const eye = ctx.playerEye;
     const toX = eye.x - this.pos.x;
@@ -232,10 +240,52 @@ export class Enemy {
     this.place(tell);
   }
 
+  /** How much hits move this one (heavies and the boss barely budge). */
+  private get resist(): number {
+    return this.def.kind === 'boss' ? 0.12 : this.def.heavy ? 0.4 : 1;
+  }
+
+  /**
+   * Cartoon hit reaction (visual + a small shove): squash, knockback along
+   * the shot and a hop. `push` is the gun's knockback speed.
+   */
+  react(dir: THREE.Vector3, push: number): void {
+    const r = this.resist;
+    this.squash.impulse(4 + push * 1.2 * Math.max(0.35, r));
+    const len = Math.hypot(dir.x, dir.z) || 1;
+    this.knock.x += (dir.x / len) * push * r;
+    this.knock.z += (dir.z / len) * push * r;
+    // Clamp so a minigun stream can't fling anyone across the map.
+    const k = Math.hypot(this.knock.x, this.knock.z);
+    if (k > 9) this.knock.multiplyScalar(9 / k);
+    if (this.hopY <= 0.001) this.hopV = Math.min(3.2, 0.6 + push * 0.35) * r;
+  }
+
+  private updateReaction(dt: number, ctx: EnemyContext): void {
+    this.squash.step(dt);
+    if (this.knock.x !== 0 || this.knock.z !== 0) {
+      this.pos.x += this.knock.x * dt;
+      this.pos.z += this.knock.z * dt;
+      pushCircleOut(this.pos, this.radius, ctx.obstacles);
+      const b = ctx.bounds - 0.6;
+      this.pos.x = Math.max(-b, Math.min(b, this.pos.x));
+      this.pos.z = Math.max(-b, Math.min(b, this.pos.z));
+      this.knock.multiplyScalar(Math.exp(-dt * 9));
+      if (this.knock.lengthSq() < 0.0004) this.knock.set(0, 0, 0);
+    }
+    if (this.hopV !== 0 || this.hopY > 0) {
+      this.hopV -= 22 * dt;
+      this.hopY += this.hopV * dt;
+      if (this.hopY <= 0) this.hopY = this.hopV = 0;
+    }
+  }
+
   private place(tell: number): void {
-    const bob = Math.abs(Math.sin(this.walkPhase)) * 0.08 * this.height;
-    const tilt = Math.sin(this.walkPhase) * 0.07;
+    const bob = Math.abs(Math.sin(this.walkPhase)) * 0.08 * this.height + this.hopY;
+    const tilt = Math.sin(this.walkPhase) * 0.07 + Math.max(-0.25, Math.min(0.25, this.knock.x * 0.02));
     const jitter = tell ? (Math.random() - 0.5) * 0.06 : 0;
+    const sq = Math.max(-0.4, Math.min(0.5, this.squash.x * 0.09));
+    this.mesh.scale.set(1 + sq, 1 - sq * 0.8, 1);
     this.mesh.position.set(this.pos.x + jitter, this.pos.y + bob, this.pos.z);
     this.mesh.rotation.set(0, this.facing, tilt);
     this.shadow.position.set(this.pos.x, this.pos.y + 0.03, this.pos.z);

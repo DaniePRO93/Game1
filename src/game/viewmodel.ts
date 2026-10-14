@@ -1,7 +1,12 @@
 import * as THREE from 'three';
 import { paintMaterial } from '../render/palette';
 import { colorMaterial, styleMaterial } from '../world/level';
+import { RECOIL, Spring } from './juice';
 import type { WeaponId } from './weapons';
+
+/** Seconds a shotgun twirl takes, and how long after the shot it starts. */
+const TWIRL_S = 0.32;
+const TWIRL_DELAY = 0.12;
 
 /**
  * First-person gun + sleeve, built from boxes so the postfx pass outlines and
@@ -13,7 +18,16 @@ export class ViewModel {
   private current: WeaponId = 'rifle';
   /** World-space muzzle position is read from this marker. */
   private muzzles = new Map<WeaponId, THREE.Object3D>();
-  private kick = 0;
+  // Recoil springs (displacement from rest): bounce out, snap back, wobble.
+  private kickBack = new Spring(600, 24);
+  private kickPitch = new Spring(600, 24);
+  private kickRoll = new Spring(400, 16);
+  private kickYaw = new Spring(600, 24);
+  private squash = new Spring(500, 14);
+  /** Shotgun twirl progress (counts up from -TWIRL_DELAY; <0 waiting, >TWIRL_S done). */
+  private twirlT = Infinity;
+  /** Minigun: recently fired, for continuous jitter. */
+  private firingT = 0;
   private bobT = 0;
   private swap = 0;
   /** 1 → 0 over a melee swing. */
@@ -57,21 +71,63 @@ export class ViewModel {
     this.swing = 1;
   }
 
-  fire(strength: number): void {
-    this.kick = Math.min(1.5, this.kick + strength);
+  /** Kick the gun with its own recoil personality. */
+  fire(): void {
+    const r = RECOIL[this.current];
+    // Aiming keeps the sights readable: half the visual kick.
+    const m = 1 - this.aimK * 0.5;
+    for (const s of [this.kickBack, this.kickPitch, this.kickRoll, this.kickYaw]) {
+      s.k = r.k;
+      s.c = r.c;
+    }
+    // Displace instantly, then let the spring snap back past rest and wobble.
+    this.kickBack.x = Math.min(0.25, this.kickBack.x + r.back * m);
+    this.kickPitch.x = Math.min(0.6, this.kickPitch.x + r.pitch * m);
+    this.kickRoll.x += r.roll * m * (Math.random() < 0.5 ? -0.4 : 1);
+    this.kickYaw.x += (Math.random() - 0.5) * 2 * r.yaw * m;
+    this.squash.x = r.squash;
+    this.squash.v = 0;
+    if (r.twirl) this.twirlT = -TWIRL_DELAY;
+    this.firingT = 0.12;
   }
 
   muzzleWorld(out: THREE.Vector3): THREE.Vector3 {
     return this.muzzles.get(this.current)!.getWorldPosition(out);
   }
 
-  /** `aim` 0..1 brings the gun to the center; `spin` 0..1 turns the minigun barrels. */
-  update(dt: number, speed: number, reloadK: number, zoomed: boolean, aim = 0, spin = 0): void {
+  /**
+   * `aim` 0..1 brings the gun to the center; `spin` 0..1 turns the minigun
+   * barrels; `charge` 0..1 squashes the railgun as it gets ready.
+   */
+  update(dt: number, speed: number, reloadK: number, zoomed: boolean, aim = 0, spin = 0, charge = 0): void {
     this.aimK += (aim - this.aimK) * (1 - Math.exp(-dt * 16));
     this.spinAngle += dt * spin * 40;
     if (this.barrels) this.barrels.rotation.z = this.spinAngle;
     const a = this.aimK;
-    this.kick = Math.max(0, this.kick - dt * 8);
+    const back = this.kickBack.step(dt);
+    const pitch = this.kickPitch.step(dt);
+    const roll = this.kickRoll.step(dt);
+    const yaw = this.kickYaw.step(dt);
+    const sq = this.squash.step(dt);
+    this.firingT = Math.max(0, this.firingT - dt);
+    let twirl = 0;
+    if (this.twirlT < TWIRL_S) {
+      this.twirlT += dt;
+      const k = Math.max(0, Math.min(1, this.twirlT / TWIRL_S));
+      // Ease in-out full turn around the barrel.
+      twirl = (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2) * Math.PI * 2;
+    }
+    // Railgun winds up (squashed, trembling) as its next shot gets ready; the shot slams it out.
+    const coil = this.current === 'railgun' ? charge * 0.12 : 0;
+    const shiver = this.current === 'railgun' && charge >= 1 ? 0.004 : this.current === 'minigun' && this.firingT > 0 ? 0.006 * spin : 0;
+    const jx = shiver ? (Math.random() - 0.5) * shiver : 0;
+    const jy = shiver ? (Math.random() - 0.5) * shiver : 0;
+    const model = this.models.get(this.current)!;
+    // Squash-and-stretch along the barrel (z), keeping volume roughly constant.
+    const sz = Math.max(0.6, 1 - sq * 0.16 - coil);
+    const sxy = 1 / Math.sqrt(sz);
+    model.scale.set(sxy, sxy, sz);
+    model.rotation.z = twirl;
     this.swap = Math.max(0, this.swap - dt * 4);
     this.swing = Math.max(0, this.swing - dt * 4.5);
     this.bobT += dt * speed * 1.6;
@@ -79,11 +135,11 @@ export class ViewModel {
     const reloadDip = Math.sin(Math.min(1, reloadK) * Math.PI);
     this.root.visible = !zoomed;
     this.root.position.set(
-      0.24 * (1 - a) + Math.sin(this.bobT) * 0.012 * bob,
-      -0.25 + a * 0.04 - Math.abs(Math.cos(this.bobT)) * 0.012 * bob - reloadDip * 0.18 - this.swap * 0.3,
-      -0.42 + a * 0.06 + this.kick * 0.07,
+      0.24 * (1 - a) + Math.sin(this.bobT) * 0.012 * bob + jx,
+      -0.25 + a * 0.04 - Math.abs(Math.cos(this.bobT)) * 0.012 * bob - reloadDip * 0.18 - this.swap * 0.3 + jy,
+      -0.42 + a * 0.06 + back,
     );
-    this.root.rotation.set(this.kick * 0.12 - reloadDip * 0.5, 0, reloadDip * 0.4);
+    this.root.rotation.set(pitch - reloadDip * 0.5 + (twirl ? Math.sin(twirl / 2) * 0.35 : 0), yaw, roll + reloadDip * 0.4);
     if (this.swing > 0) {
       // Diagonal slash: wind up top-right, cut down across to the left.
       const p = 1 - this.swing;

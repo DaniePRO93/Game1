@@ -4,6 +4,7 @@ import { buildSprite, DoodleSprite } from './draw/sprite';
 import { Sfx } from './game/audio';
 import { doodleStats } from './game/doodleStats';
 import { Doodles, Game } from './game/game';
+import { REDUCED_MOTION_SHAKE } from './game/juice';
 import { DIFFICULTIES, Difficulty } from './game/difficulty';
 import { decodeShare, encodeShare } from './game/share';
 import { currentAccount, initAccount, mountAccountChip, requireAccount } from './net/accountUi';
@@ -115,6 +116,59 @@ function setColor(on: boolean, save: boolean): void {
 }
 setColor(colorToggle.checked, false);
 colorToggle.addEventListener('change', () => setColor(colorToggle.checked, true));
+
+// ── Screen shake (menu + pause slider, remembered). Systems that ask for
+// reduced motion get a much gentler shake on top of the slider. ──────────
+const SHAKE_KEY = 'doodle-fps.shake.v1';
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let shake = 0.6;
+try {
+  const saved = localStorage.getItem(SHAKE_KEY);
+  if (saved !== null && saved !== '' && Number.isFinite(Number(saved))) shake = Number(saved);
+} catch {
+  /* default 60% */
+}
+const shakeInputs = Array.from(document.querySelectorAll<HTMLInputElement>('.shake-input'));
+function setShake(v: number, save: boolean): void {
+  shake = Math.min(1, Math.max(0, v));
+  game.shakeScale = shake * (reducedMotion.matches ? REDUCED_MOTION_SHAKE : 1);
+  $('shake-reduced').style.display = reducedMotion.matches ? '' : 'none';
+  for (const el of shakeInputs) {
+    el.value = String(shake);
+    el.parentElement!.querySelector('output')!.textContent = `${Math.round(shake * 100)}%`;
+  }
+  if (!save) return;
+  try {
+    localStorage.setItem(SHAKE_KEY, String(shake));
+  } catch {
+    /* ignore */
+  }
+}
+for (const el of shakeInputs) el.addEventListener('input', () => setShake(Number(el.value), true));
+reducedMotion.addEventListener?.('change', () => setShake(shake, false));
+setShake(shake, false);
+
+// ── Damage numbers (on by default, remembered) ───────────────────────────
+const NUMS_KEY = 'doodle-fps.dmgnums.v1';
+const numsToggle = $<HTMLInputElement>('dmg-nums');
+try {
+  numsToggle.checked = localStorage.getItem(NUMS_KEY) !== '0';
+} catch {
+  /* default on */
+}
+function setNums(on: boolean, save: boolean): void {
+  numsToggle.checked = on;
+  hud.nums.enabled = on;
+  if (!on) hud.nums.clear();
+  if (!save) return;
+  try {
+    localStorage.setItem(NUMS_KEY, on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+setNums(numsToggle.checked, false);
+numsToggle.addEventListener('change', () => setNums(numsToggle.checked, true));
 
 // ── Map picker (solo). Picking a map switches to its native look; the color
 // toggle can still override it for solo runs. ─────────────────────────────
