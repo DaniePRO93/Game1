@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { paintMaterial } from '../render/palette';
 import { colorMaterial, styleMaterial } from '../world/level';
 import type { WeaponId } from './weapons';
 
@@ -38,6 +39,13 @@ export class ViewModel {
     this.current = id;
     this.models.get(id)!.visible = true;
     this.swap = 1;
+  }
+
+  setColorMode(on: boolean): void {
+    this.root.traverse((o) => {
+      const cm = o.userData.colorMode as { ink: THREE.Material; paint: THREE.Material } | undefined;
+      if (cm && o instanceof THREE.Mesh) o.material = on ? cm.paint : cm.ink;
+    });
   }
 
   startSwing(): void {
@@ -91,9 +99,12 @@ function buildGun(id: WeaponId): THREE.Group {
   const ink = (style: 'plain' | 'brick' | 'fill', x: number, y: number, z: number, sx: number, sy: number, sz: number) =>
     box(styleMaterial(style), x, y, z, sx, sy, sz);
 
-  // Sleeve + hand (common).
-  ink('brick', 0.02, -0.1, 0.22, 0.11, 0.11, 0.34).rotation.x = 0.15;
-  ink('plain', 0, -0.07, 0.04, 0.08, 0.09, 0.09);
+  // Sleeve + hand (common). Tagged so color mode can paint them.
+  const sleeve = ink('brick', 0.02, -0.1, 0.22, 0.11, 0.11, 0.34);
+  sleeve.rotation.x = 0.15;
+  sleeve.userData.colorMode = { ink: styleMaterial('brick'), paint: paintMaterial('sleeve') };
+  const hand = ink('plain', 0, -0.07, 0.04, 0.08, 0.09, 0.09);
+  hand.userData.colorMode = { ink: styleMaterial('plain'), paint: paintMaterial('skin') };
 
   let muzzle = new THREE.Vector3(0, 0, -0.6);
   switch (id) {

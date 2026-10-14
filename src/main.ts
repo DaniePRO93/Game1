@@ -97,8 +97,10 @@ try {
   /* default off */
 }
 game.setColorMode(colorToggle.checked);
+postfx.colorMode = colorToggle.checked;
 colorToggle.addEventListener('change', () => {
   game.setColorMode(colorToggle.checked);
+  postfx.colorMode = colorToggle.checked;
   try {
     localStorage.setItem(COLOR_KEY, colorToggle.checked ? '1' : '0');
   } catch {

@@ -121,6 +121,51 @@ export const sunTex = canvasTex(256, 256, (c) => {
   }
 });
 
+/** Color-mode sun: a vivid yellow disc with rays. */
+export const sunColorTex = canvasTex(256, 256, (c) => {
+  c.translate(128, 128);
+  c.fillStyle = '#ffd400';
+  c.strokeStyle = '#f08a00';
+  c.lineWidth = 6;
+  c.beginPath();
+  c.arc(0, 0, 52, 0, Math.PI * 2);
+  c.fill();
+  c.stroke();
+  c.lineWidth = 8;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    c.beginPath();
+    c.moveTo(Math.cos(a) * 68, Math.sin(a) * 68);
+    c.lineTo(Math.cos(a) * 100, Math.sin(a) * 100);
+    c.strokeStyle = '#ffc400';
+    c.stroke();
+  }
+});
+
+/** Color-mode cloud: pure white puffs. */
+export const cloudColorTex = canvasTex(256, 128, (c) => {
+  c.strokeStyle = 'rgba(42,46,133,0.45)';
+  c.fillStyle = '#ffffff';
+  c.lineWidth = 4;
+  const puffs = [
+    [70, 80, 34],
+    [115, 60, 42],
+    [165, 74, 34],
+    [195, 88, 24],
+  ];
+  c.beginPath();
+  for (const [x, y, r] of puffs) {
+    c.moveTo(x + r, y);
+    c.arc(x, y, r, 0, Math.PI * 2);
+  }
+  c.fill();
+  for (const [x, y, r] of puffs) {
+    c.beginPath();
+    c.arc(x, y, r, Math.PI * 0.85, Math.PI * 2.15);
+    c.stroke();
+  }
+});
+
 export const cloudTex = canvasTex(256, 128, (c) => {
   c.strokeStyle = 'rgba(42,46,133,0.55)';
   c.fillStyle = '#f7f4ec';

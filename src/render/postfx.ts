@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { paletteColors, palettePatterns } from './palette';
 
 /**
  * Turns a plainly-lit scene into blue ballpoint pen on ruled notebook paper.
@@ -32,6 +33,9 @@ uniform float damage;
 uniform float cameraNear;
 uniform float cameraFar;
 uniform int debugView;
+uniform float colorMode;
+uniform vec3 palette[32];
+uniform float palettePat[32];
 varying vec2 vUv;
 
 const vec3 INK = vec3(0.16, 0.18, 0.52);
@@ -101,6 +105,8 @@ void main() {
 
   vec3 paper = vec3(0.968, 0.958, 0.925) * (0.975 + 0.025 * noise(css * 0.7));
   vec3 col = paper;
+  // Color mode sky: vivid light blue, deeper toward the top.
+  if (!geo && colorMode > 0.5) col = mix(vec3(0.72, 0.9, 1.0), vec3(0.42, 0.76, 1.0), smoothstep(0.35, 1.0, vUv.y));
 
   if (geo) {
     vec4 c = texture2D(tColor, uv);
@@ -110,10 +116,21 @@ void main() {
     float tone = clamp(c.b * inv, 0.0, 1.0);
     float shade = 1.0 - L;
 
-    // pattern ≈ 0.25 marks "colored ink": tone is then a hue (weapons).
-    bool colored = pat > 0.15 && pat < 0.35;
+    // pattern ≈ 0.2: "colored ink", tone is a hue (weapons).
+    // pattern ≈ 0.3: palette paint, tone is a palette index (color mode).
+    bool colored = pat > 0.12 && pat < 0.25;
+    bool painted = pat >= 0.25 && pat < 0.36;
     vec3 hatchInk = INK;
-    if (colored) {
+    float paintPat = 0.0;
+    if (painted) {
+      int idx = int(clamp(floor(tone * 32.0), 0.0, 31.0));
+      vec3 pc = palette[idx];
+      paintPat = palettePat[idx];
+      col = mix(col, pc, 0.94);
+      // Shade lines in a darker version of the paint, nudged toward pen ink.
+      hatchInk = mix(pc * 0.5, INK, 0.2);
+      col = mix(col, hatchInk, smoothstep(0.3, 0.9, shade) * 0.12);
+    } else if (colored) {
       vec3 hc = hsv2rgb(vec3(tone, 0.62, 0.97));
       col = mix(col, hc, 0.9);
       hatchInk = hc * 0.42;
@@ -130,15 +147,16 @@ void main() {
     h = max(h, hatch(hp, -0.785, 6.0, 0.9) * smoothstep(0.42, 0.50, shade));
     h = max(h, hatch(hp, 0.0, 4.0, 0.9) * smoothstep(0.62, 0.70, shade));
     float diamond = max(hatch(hp, 1.05, 5.0, 0.8), hatch(hp, -1.05, 5.0, 0.8));
-    h = max(h, diamond * step(0.4, pat) * step(pat, 0.6) * 0.8);
+    h = max(h, diamond * max(step(0.4, pat) * step(pat, 0.6), paintPat) * 0.8);
     h *= 0.55 + 0.45 * noise(hp * 0.12);
-    col = mix(col, hatchInk, h * 0.7);
+    // Lighter hatching on painted surfaces keeps bright colors bright.
+    col = mix(col, hatchInk, h * (painted ? 0.5 : 0.7));
   }
 
   // Faint ruled lines over everything, red margin on the left.
   float m = mod(css.y, 30.0);
   float rule = 1.0 - smoothstep(0.4, 1.3, min(m, 30.0 - m));
-  col = mix(col, RULE, rule * (geo ? 0.18 : 0.55));
+  col = mix(col, RULE, rule * (geo ? 0.18 : mix(0.55, 0.22, colorMode)));
   float mg = 1.0 - smoothstep(0.5, 1.4, abs(css.x - 64.0));
   col = mix(col, MARGIN, mg * 0.5);
 
@@ -186,6 +204,7 @@ export class PostFX {
   private mat: THREE.ShaderMaterial;
   private boilTimer = 0;
   private boil = 0;
+  colorMode = false;
 
   constructor(private renderer: THREE.WebGLRenderer) {
     this.colorRT = new THREE.WebGLRenderTarget(1, 1, {
@@ -207,6 +226,9 @@ export class PostFX {
         damage: { value: 0 },
         cameraNear: { value: 0.1 },
         cameraFar: { value: 1000 },
+        colorMode: { value: 0 },
+        palette: { value: paletteColors },
+        palettePat: { value: palettePatterns },
         debugView: { value: Number(new URLSearchParams(location.search).get('view') ?? 0) },
       },
       depthTest: true,
@@ -258,6 +280,7 @@ export class PostFX {
     u.boil.value = this.boil;
     u.slowmo.value = params.slowmo;
     u.damage.value = params.damage;
+    u.colorMode.value = this.colorMode ? 1 : 0;
     u.cameraNear.value = camera.near;
     u.cameraFar.value = camera.far;
 

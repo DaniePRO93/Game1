@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { DoodleSprite } from '../draw/sprite';
-import { cloudTex, markerTex, sunTex } from '../render/ink';
+import { cloudColorTex, cloudTex, markerTex, sunColorTex, sunTex } from '../render/ink';
+import { paintMaterial } from '../render/palette';
 import { buildLevel, Level, styleMaterial } from '../world/level';
 import { raycastBoxes } from '../world/collision';
 import type { Hud } from '../ui/hud';
@@ -57,6 +58,9 @@ export class Game {
   private fx: FX;
   private pickups: Pickup[] = [];
   private markerTextures = { ammo: markerTex('ammo'), health: markerTex('health') };
+  private sunSprite!: THREE.Sprite;
+  private cloudSprites: THREE.Sprite[] = [];
+  private colorMode = false;
   private doodles: Doodles | null = null;
   private stats: { enemy: DoodleStats; boss: DoodleStats } | null = null;
   readonly combo = new Combo();
@@ -115,6 +119,7 @@ export class Game {
     sunSprite.position.set(-160, 70, -300);
     sunSprite.scale.setScalar(90);
     this.overlay.add(sunSprite);
+    this.sunSprite = sunSprite;
     const clouds: [number, number, number, number][] = [
       [-60, 55, -280, 70],
       [80, 65, -300, 90],
@@ -127,6 +132,7 @@ export class Game {
       c.position.set(x, y, z);
       c.scale.set(s, s / 2, 1);
       this.overlay.add(c);
+      this.cloudSprites.push(c);
     }
 
     this.player.spawn(this.level.playerSpawn);
@@ -147,7 +153,17 @@ export class Game {
   }
 
   setColorMode(on: boolean): void {
+    this.colorMode = on;
     this.level.setColorMode(on);
+    this.viewmodel.setColorMode(on);
+    this.sunSprite.material.map = on ? sunColorTex : sunTex;
+    for (const c of this.cloudSprites) c.material.map = on ? cloudColorTex : cloudTex;
+    for (const p of this.pickups) p.box.material = this.pickupMaterial(p.kind);
+  }
+
+  private pickupMaterial(kind: 'ammo' | 'health'): THREE.Material {
+    if (this.colorMode) return paintMaterial(kind === 'ammo' ? 'safetyGreen' : 'white');
+    return styleMaterial(kind === 'ammo' ? 'brick' : 'tone');
   }
 
   start(doodles: Doodles): void {
@@ -608,7 +624,7 @@ export class Game {
 
   // ── Pickups ───────────────────────────────────────────────────────────
   private dropPickup(kind: 'ammo' | 'health', at: THREE.Vector3): void {
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.45, 0.55), styleMaterial(kind === 'ammo' ? 'brick' : 'tone'));
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.45, 0.55), this.pickupMaterial(kind));
     const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.markerTextures[kind], transparent: true, depthWrite: false }));
     marker.scale.setScalar(0.5);
     const pos = at.clone();

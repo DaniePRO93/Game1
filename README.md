@@ -34,7 +34,7 @@ npm run build    # type-check + production build into dist/
 - **Combo:** each kill within 3 s of the last builds a multiplier up to ×5. Sword kills and slow-mo kills count double. The window runs on game time, so slow-mo stretches it.
 - **Wave clock:** a countdown per wave, for **bonus points only**. It runs in real time, so slow-mo doesn't stop it. Beat it to earn a time bonus and 4 upgrade choices instead of 3.
 - **Upgrades:** after each wave, pick a sticky note (17 kinds: damage, fire rate, time bar, air jumps, slide, sword reach, bullet-swatting sword, ink bombs, ricochet, …).
-- **Color mode:** a toggle on the drawing screen that swaps the blue-pen world for vibrant colored ink.
+- **Color mode:** a toggle on the drawing screen. The world switches to colored ink but keeps the pen outlines and hatching: grey concrete building, white ground, light-blue sky, yellow sun, a yellow-and-orange crane, and real-world colors for everything else (red brick, wooden crates, colored shipping containers). Paints are named in `src/render/palette.ts`.
 - **Share drawings:** makes a link containing your enemy and boss drawings. From the game-over screen it also includes your score, as a challenge. Links only work for friends when the game is hosted somewhere public; a localhost link only works on your own computer.
 
 ## How the look works
