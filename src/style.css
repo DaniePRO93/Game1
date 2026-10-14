@@ -677,3 +677,48 @@ button.big {
 #over-post button {
   font-size: 18px;
 }
+
+/* Map picker (solo) and map vote (versus). */
+.map-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.map-label {
+  font-size: 18px;
+}
+.map-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  max-width: 320px;
+}
+.map-btn {
+  font-size: 17px;
+  line-height: 1.1;
+  padding: 4px 8px;
+  text-align: left;
+  opacity: 0.6;
+}
+.map-btn small {
+  display: block;
+  font-size: 13px;
+  opacity: 0.75;
+}
+.map-btn.active {
+  opacity: 1;
+  color: var(--red);
+  border-color: var(--red);
+}
+.map-btn .look {
+  font-size: 12px;
+  padding: 0 5px;
+  margin-left: 4px;
+  border-radius: 6px;
+  border: 1.5px solid currentColor;
+}
+.map-btn .look.color {
+  color: #fff;
+  border-color: #2d7fe6;
+  background: linear-gradient(90deg, #ff7a00, #ffd60a 40%, #2fb45f 70%, #2d7fe6);
+}

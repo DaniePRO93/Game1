@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { DoodleSprite } from '../draw/sprite';
 import { cloudColorTex, cloudTex, markerTex, sunColorTex, sunTex } from '../render/ink';
 import { paintMaterial } from '../render/palette';
-import { buildLevel, Level, styleMaterial } from '../world/level';
+import { buildLevel, Level, MapId, styleMaterial } from '../world/level';
 import { raycastBoxes } from '../world/collision';
 import type { Hud } from '../ui/hud';
 import type { Sfx } from './audio';
@@ -46,7 +46,9 @@ export class Game {
   readonly world = new THREE.Scene();
   readonly overlay = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.05, 600);
-  readonly level: Level;
+  level: Level;
+  /** Set when the map changed so the renderer re-bakes shadows. */
+  shadowsDirty = true;
   readonly player = new Player();
   readonly clock = new GameClock();
   readonly meter = new TimeMeter();
@@ -95,6 +97,7 @@ export class Game {
   constructor(private hud: Hud, private sfx: Sfx, private input: Input) {
     this.level = buildLevel();
     this.world.add(this.level.scene);
+    this.overlay.add(this.level.decor);
     this.world.add(this.camera);
     this.camera.add(this.viewmodel.root);
     this.projectiles = new Projectiles(this.overlay);
@@ -163,6 +166,19 @@ export class Game {
     for (const p of this.pickups) p.box.material = this.pickupMaterial(p.kind);
   }
 
+  /** Swap the map (keeps color mode). */
+  setMap(id: MapId): void {
+    if (this.level.id === id) return;
+    this.world.remove(this.level.scene);
+    this.overlay.remove(this.level.decor);
+    this.level = buildLevel(id);
+    this.world.add(this.level.scene);
+    this.overlay.add(this.level.decor);
+    this.level.setColorMode(this.colorMode);
+    this.shadowsDirty = true;
+    this.player.spawn(this.level.playerSpawn);
+  }
+
   private pickupMaterial(kind: 'ammo' | 'health'): THREE.Material {
     if (this.colorMode) return paintMaterial(kind === 'ammo' ? 'safetyGreen' : 'white');
     return styleMaterial(kind === 'ammo' ? 'brick' : 'tone');
@@ -201,9 +217,10 @@ export class Game {
   /** Spin the camera over the level behind the menu. */
   idle(realDt: number): void {
     this.idleT += realDt * 0.06;
-    const r = 30;
-    this.camera.position.set(Math.sin(this.idleT) * r, 9, Math.cos(this.idleT) * r);
-    this.camera.lookAt(0, 4, -8);
+    const { center, radius, height } = this.level.idle;
+    this.camera.position.set(center.x + Math.sin(this.idleT) * radius, height, center.z + Math.cos(this.idleT) * radius);
+    this.camera.lookAt(center);
+    this.level.update(realDt);
     this.viewmodel.root.visible = false;
   }
 
@@ -232,7 +249,13 @@ export class Game {
 
     this.player.look(input, this.zoomed ? 0.35 : 1);
     this.player.update(pDt, input, this.level.boxes);
+    this.player.applyTriggers(this.level.triggers, pDt);
+    this.level.update(realDt);
     switch (this.player.event) {
+      case 'launch':
+        this.sfx.airJump();
+        this.fx.spray(this.player.eye(new THREE.Vector3()).setY(this.player.pos.y + 0.1), new THREE.Vector3(0, 1, 0), ERASER_PINK, 6, 0.06);
+        break;
       case 'jump':
         this.sfx.jump();
         break;
@@ -608,7 +631,7 @@ export class Game {
       pos.x += (Math.random() - 0.5) * 3;
       pos.z += (Math.random() - 0.5) * 3;
     }
-    if (kind === 'boss') pos = new THREE.Vector3(34, 0, 8);
+    if (kind === 'boss') pos = this.level.bossSpawn.clone();
     const hpScale = kind === 'boss' ? 1 + (this.wave / 5 - 1) * 0.5 : 1 + (this.wave - 1) * 0.06;
     const boss = kind === 'boss';
     const st = boss ? this.stats.boss : this.stats.enemy;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { Body, Box, moveBody } from '../world/collision';
+import { Body, Box, Vec3, anyOverlap, moveBody, overlaps } from '../world/collision';
+import type { Trigger } from '../world/level';
 import type { Input } from './input';
 
 const WALK = 6.5;
@@ -21,12 +22,15 @@ const SLIDE_FRICTION = 4;
 const SLIDE_COOLDOWN = 0.35;
 export const EYE = 1.6;
 const SLIDE_EYE = 0.85;
+const STAND_H = 1.75;
+/** Collision height while sliding: fits through 1.1m gaps (tubes, ducts, logs). */
+const SLIDE_H = 1.0;
 
 export class Player implements Body {
   pos = { x: 0, y: 0, z: 0 };
   vel = { x: 0, y: 0, z: 0 };
   halfW = 0.35;
-  height = 1.75;
+  height = STAND_H;
   grounded = false;
   yaw = 0;
   pitch = 0;
@@ -50,7 +54,7 @@ export class Player implements Body {
   private landGrace = 0;
   private eyeH = EYE;
   /** Set for one frame when a movement event happens (for sounds). */
-  event: 'jump' | 'airjump' | 'slide' | 'land' | null = null;
+  event: 'jump' | 'airjump' | 'slide' | 'land' | 'launch' | null = null;
 
   spawn(at: THREE.Vector3): void {
     this.pos = { x: at.x, y: at.y, z: at.z };
@@ -60,7 +64,39 @@ export class Player implements Body {
     this.hp = this.maxHp;
     this.recoil = 0;
     this.sliding = 0;
+    this.height = STAND_H;
     this.eyeH = EYE;
+  }
+
+  /** Jump pad / trampoline: set the given velocity axes and refill air jumps. */
+  launch(v: Partial<Vec3>): void {
+    if (v.x !== undefined) this.vel.x = v.x;
+    if (v.y !== undefined) this.vel.y = v.y;
+    if (v.z !== undefined) this.vel.z = v.z;
+    this.grounded = false;
+    this.sinceGrounded = COYOTE;
+    this.jumpBuffer = 0;
+    this.airJumpsLeft = this.airJumps;
+    this.sliding = 0;
+    this.landGrace = 0;
+    this.event = 'launch';
+  }
+
+  /** Launch pads and updrafts. Call after update(). */
+  applyTriggers(triggers: Trigger[], dt: number): void {
+    const min = { x: this.pos.x - this.halfW, y: this.pos.y, z: this.pos.z - this.halfW };
+    const max = { x: this.pos.x + this.halfW, y: this.pos.y + this.height, z: this.pos.z + this.halfW };
+    for (const t of triggers) {
+      if (!overlaps(min, max, t.box)) continue;
+      if (t.kind === 'launch') {
+        // Only while coming down or standing, so one touch = one bounce.
+        if (this.vel.y <= 1) this.launch(t.vel);
+      } else {
+        this.vel.y = Math.min(t.maxUp, this.vel.y + t.lift * dt);
+        this.grounded = false;
+        this.airJumpsLeft = this.airJumps;
+      }
+    }
   }
 
   look(input: Input, sensScale: number): void {
@@ -183,6 +219,23 @@ export class Player implements Body {
       }
     }
     this.vel.y -= GRAVITY * dt;
+
+    // Duck while sliding; stay ducked (and keep sliding) while something is overhead.
+    if (this.sliding > 0) this.height = SLIDE_H;
+    else if (this.height < STAND_H) {
+      this.height = STAND_H;
+      if (anyOverlap(this, boxes)) {
+        this.height = SLIDE_H;
+        this.sliding = 0.12;
+        const sp = Math.hypot(this.vel.x, this.vel.z);
+        if (sp < 4) {
+          const dx = sp > 0.1 ? this.vel.x / sp : len > 0 ? wx : -sin;
+          const dz = sp > 0.1 ? this.vel.z / sp : len > 0 ? wz : -cos;
+          this.vel.x = dx * 4;
+          this.vel.z = dz * 4;
+        }
+      }
+    }
 
     const wasGrounded = this.grounded;
     moveBody(this, boxes, this.vel.x * dt, this.vel.y * dt, this.vel.z * dt, STEP);

@@ -33,6 +33,16 @@ const PAINTS = {
   safetyGreen: { hex: '#5a8f3c', pattern: false },
   skin: { hex: '#f1c48f', pattern: false },
   sleeve: { hex: '#3c4b78', pattern: true },
+  // Playground / treetops.
+  grass: { hex: '#86d45f', pattern: false },
+  leaf: { hex: '#3fb04a', pattern: false },
+  leafDark: { hex: '#23863a', pattern: true },
+  bark: { hex: '#8a5a34', pattern: false },
+  mushroomRed: { hex: '#ef3b3b', pattern: false },
+  sand: { hex: '#f2d38a', pattern: false },
+  plasticPurple: { hex: '#9b5cf0', pattern: false },
+  plasticTeal: { hex: '#20c4b4', pattern: false },
+  plasticPink: { hex: '#ff6fb1', pattern: false },
 } as const;
 
 export type Paint = keyof typeof PAINTS;

@@ -46,7 +46,7 @@ export function raycastBoxes(boxes: Box[], o: Vec3, d: Vec3, maxT: number): RayH
   return best;
 }
 
-function overlaps(min: Vec3, max: Vec3, b: Box): boolean {
+export function overlaps(min: Vec3, max: Vec3, b: Box): boolean {
   return (
     min.x < b.max.x - EPS && max.x > b.min.x + EPS &&
     min.y < b.max.y - EPS && max.y > b.min.y + EPS &&
@@ -75,7 +75,7 @@ function bodyAABB(b: Body, out: { min: Vec3; max: Vec3 }) {
 
 const tmpBB = { min: { x: 0, y: 0, z: 0 }, max: { x: 0, y: 0, z: 0 } };
 
-function anyOverlap(b: Body, boxes: Box[]): boolean {
+export function anyOverlap(b: Body, boxes: Box[]): boolean {
   bodyAABB(b, tmpBB);
   for (const box of boxes) if (overlaps(tmpBB.min, tmpBB.max, box)) return true;
   return false;

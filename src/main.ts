@@ -8,6 +8,7 @@ import { decodeShare, encodeShare } from './game/share';
 import { currentAccount, initAccount, mountAccountChip, requireAccount } from './net/accountUi';
 import { RunResult, publishMonster, submitScore } from './net/backend';
 import { UPGRADES, Upgrade } from './game/upgrades';
+import { MAPS, MapId, mapInfo } from './world/level';
 import { Input } from './game/input';
 import { PostFX } from './render/postfx';
 import { Hud } from './ui/hud';
@@ -98,17 +99,56 @@ try {
 } catch {
   /* default off */
 }
-game.setColorMode(colorToggle.checked);
-postfx.colorMode = colorToggle.checked;
-colorToggle.addEventListener('change', () => {
-  game.setColorMode(colorToggle.checked);
-  postfx.colorMode = colorToggle.checked;
+function setColor(on: boolean, save: boolean): void {
+  colorToggle.checked = on;
+  game.setColorMode(on);
+  postfx.colorMode = on;
+  if (!save) return;
   try {
-    localStorage.setItem(COLOR_KEY, colorToggle.checked ? '1' : '0');
+    localStorage.setItem(COLOR_KEY, on ? '1' : '0');
   } catch {
     /* ignore */
   }
-});
+}
+setColor(colorToggle.checked, false);
+colorToggle.addEventListener('change', () => setColor(colorToggle.checked, true));
+
+// ── Map picker (solo). Picking a map switches to its native look; the color
+// toggle can still override it for solo runs. ─────────────────────────────
+const MAP_KEY = 'doodle-fps.map.v1';
+let soloMap: MapId = 'construction';
+try {
+  soloMap = mapInfo(params.get('map') ?? localStorage.getItem(MAP_KEY) ?? 'construction').id;
+} catch {
+  /* default */
+}
+function mapButton(id: MapId): HTMLButtonElement {
+  const m = mapInfo(id);
+  const b = document.createElement('button');
+  b.className = 'map-btn';
+  b.dataset.map = m.id;
+  b.innerHTML = `<span class="name"></span><span class="look ${m.look}">${m.look}</span><small></small>`;
+  b.querySelector('.name')!.textContent = m.name;
+  b.querySelector('small')!.textContent = m.blurb;
+  return b;
+}
+function pickSoloMap(id: MapId, applyLook: boolean): void {
+  soloMap = id;
+  game.setMap(id);
+  if (applyLook) setColor(mapInfo(id).look === 'color', true);
+  for (const el of Array.from(document.querySelectorAll<HTMLButtonElement>('#map-list .map-btn'))) el.classList.toggle('active', el.dataset.map === id);
+  try {
+    localStorage.setItem(MAP_KEY, id);
+  } catch {
+    /* ignore */
+  }
+}
+for (const m of MAPS) {
+  const b = mapButton(m.id);
+  b.onclick = () => pickSoloMap(m.id, true);
+  $('map-list').append(b);
+}
+pickSoloMap(soloMap, params.has('map'));
 
 // ── Drawing sheets + live stat card ──────────────────────────────────────
 for (const tab of Array.from(document.querySelectorAll<HTMLButtonElement>('.tab'))) {
@@ -339,6 +379,7 @@ if (testMode) {
     __pick: pickUpgrade,
     __example: exampleStrokes,
     __upgrades: UPGRADES,
+    __map: (id: MapId) => pickSoloMap(id, true),
   });
 }
 
@@ -346,6 +387,10 @@ let last = performance.now();
 function frame(now: number): void {
   const realDt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  if (game.shadowsDirty) {
+    renderer.shadowMap.needsUpdate = true;
+    game.shadowsDirty = false;
+  }
   if (screen === 'playing') game.update(realDt);
   else if (screen === 'menu') game.idle(realDt);
   hud.tick(realDt);
