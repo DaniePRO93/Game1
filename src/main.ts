@@ -5,8 +5,8 @@ import { Sfx } from './game/audio';
 import { doodleStats } from './game/doodleStats';
 import { Doodles, Game } from './game/game';
 import { decodeShare, encodeShare } from './game/share';
-import { currentAccount, initAccount, mountAccountChip, onAccount, requireAccount } from './net/accountUi';
-import { RunResult, peekPendingRun, publishMonster, savePendingRun, submitScore, takePendingRun } from './net/backend';
+import { currentAccount, initAccount, mountAccountChip, requireAccount } from './net/accountUi';
+import { RunResult, publishMonster, submitScore } from './net/backend';
 import { UPGRADES, Upgrade } from './game/upgrades';
 import { Input } from './game/input';
 import { PostFX } from './render/postfx';
@@ -283,20 +283,6 @@ function postRun(run: RunResult): void {
   );
 }
 
-// A run finished while signed out comes back after the magic link: post it
-// once the account (with username) is ready.
-if (peekPendingRun()) {
-  onAccount((a) => {
-    if (!a.session || !a.username) return;
-    const run = takePendingRun();
-    if (!run) return;
-    submitScore(run).then(
-      () => hud.hint(`✓ your ${run.score}-point run is on the leaderboard`, 5),
-      (err: Error) => hud.hint(`couldn't post your last run: ${err.message}`, 5),
-    );
-  });
-}
-
 $('btn-publish').onclick = () => {
   const msg = $('publish-msg');
   const sheet: Sheet = pad.sheet;
@@ -331,18 +317,12 @@ game.onDeath = () => {
   const post = $('over-post');
   post.innerHTML = '';
   const acct = currentAccount();
-  if (acct.session && acct.username) {
+  if (acct.username) {
     postRun(run);
   } else if (game.score > 0) {
     const b = document.createElement('button');
-    b.textContent = 'sign in to post this score';
-    b.onclick = () => {
-      savePendingRun(run);
-      requireAccount(() => {
-        takePendingRun();
-        postRun(run);
-      }, 'to put this score on the leaderboard');
-    };
+    b.textContent = 'pick a name to post this score';
+    b.onclick = () => requireAccount(() => postRun(run), 'to put this score on the leaderboard');
     post.append(b);
   }
   show('over');

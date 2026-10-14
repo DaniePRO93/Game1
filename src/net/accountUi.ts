@@ -1,12 +1,12 @@
 import './account.css';
-import { Account, claimUsername, getAccount, onAuthChange, sendMagicLink, signOut } from './backend';
+import { Account, claimName, getAccount } from './backend';
 
 /**
- * Shared account UI for the landing page and the game: a small "sign in /
- * username" chip plus a notebook-style dialog for the magic link and for
- * picking a username.
+ * Shared name UI for the landing page and the game: a small "pick a name"
+ * chip plus a notebook-style dialog. No email, no password: the name is tied
+ * to this browser.
  */
-let account: Account = { session: null, username: null };
+let account: Account = getAccount();
 const listeners = new Set<(a: Account) => void>();
 let dialog: HTMLDivElement | null = null;
 let afterReady: (() => void) | null = null;
@@ -20,60 +20,50 @@ export function onAccount(cb: (a: Account) => void): void {
   cb(account);
 }
 
-async function refresh(): Promise<void> {
-  try {
-    account = await getAccount();
-  } catch {
-    account = { session: null, username: null };
-  }
+function emit(): void {
   for (const cb of listeners) cb(account);
-  // Just came back from the magic link without a username: ask for one.
-  if (account.session && !account.username) openDialog('username');
 }
 
-let started = false;
 export function initAccount(): void {
-  if (started) return;
-  started = true;
-  onAuthChange(() => void refresh());
-  void refresh();
+  account = getAccount();
+  emit();
 }
 
-/** Make sure the player is signed in with a username, then run `then`. */
+/** Make sure the player has a name, then run `then`. */
 export function requireAccount(then: () => void, reason: string): void {
-  if (account.session && account.username) {
+  if (account.username) {
     then();
     return;
   }
+  openDialog(reason);
   afterReady = then;
-  openDialog(account.session ? 'username' : 'email', reason);
 }
 
-/** Render a sign-in chip into `host`. */
+/** Render the name chip into `host`. */
 export function mountAccountChip(host: HTMLElement): void {
   host.classList.add('acct-chip');
   onAccount((a) => {
     host.innerHTML = '';
-    if (a.session && a.username) {
+    if (a.username) {
       const name = document.createElement('span');
       name.className = 'acct-name';
       name.textContent = `✎ ${a.username}`;
-      const out = document.createElement('button');
-      out.className = 'acct-link';
-      out.textContent = 'sign out';
-      out.onclick = () => void signOut();
-      host.append(name, out);
+      const change = document.createElement('button');
+      change.className = 'acct-link';
+      change.textContent = 'change';
+      change.onclick = () => openDialog();
+      host.append(name, change);
     } else {
       const b = document.createElement('button');
       b.className = 'acct-btn';
-      b.textContent = a.session ? 'pick a username' : 'sign in';
-      b.onclick = () => openDialog(a.session ? 'username' : 'email', 'to post scores and publish monsters');
+      b.textContent = 'pick a name';
+      b.onclick = () => openDialog('to post scores and publish monsters');
       host.append(b);
     }
   });
 }
 
-function openDialog(step: 'email' | 'username', reason = ''): void {
+function openDialog(reason = ''): void {
   closeDialog();
   dialog = document.createElement('div');
   dialog.className = 'acct-overlay';
@@ -83,17 +73,23 @@ function openDialog(step: 'email' | 'username', reason = ''): void {
       <h3 id="acct-title"></h3>
       <p class="acct-reason"></p>
       <form class="acct-form">
-        <input class="acct-input" required />
-        <button class="acct-submit" type="submit"></button>
+        <input class="acct-input" required type="text" maxlength="16" pattern="[A-Za-z0-9_]{3,16}"
+          autocomplete="nickname" placeholder="doodle_master" spellcheck="false" />
+        <button class="acct-submit" type="submit">save</button>
       </form>
       <p class="acct-msg" role="status"></p>
-      <p class="acct-fine"></p>
+      <p class="acct-fine">3–16 letters, numbers or _. Your name stays on this browser, no sign-up.</p>
     </div>`;
   document.body.append(dialog);
   const $ = <T extends HTMLElement>(s: string) => dialog!.querySelector(s) as T;
   const input = $<HTMLInputElement>('.acct-input');
   const msg = $<HTMLElement>('.acct-msg');
   const submit = $<HTMLButtonElement>('.acct-submit');
+  $('#acct-title').textContent = account.username ? 'change your name' : 'pick a name';
+  $('.acct-reason').textContent = reason
+    ? `pick a name ${reason}`
+    : 'this is how you show up on the leaderboard and in the monster gallery';
+  if (account.username) input.value = account.username;
   $<HTMLButtonElement>('.acct-close').onclick = closeDialog;
   dialog.addEventListener('click', (e) => {
     if (e.target === dialog) closeDialog();
@@ -101,63 +97,27 @@ function openDialog(step: 'email' | 'username', reason = ''): void {
   dialog.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeDialog();
   });
-
-  if (step === 'email') {
-    $('#acct-title').textContent = 'sign in';
-    $('.acct-reason').textContent = reason ? `sign in ${reason}` : '';
-    input.type = 'email';
-    input.placeholder = 'you@example.com';
-    input.autocomplete = 'email';
-    submit.textContent = 'email me a link';
-    $('.acct-fine').textContent = 'No password. We email you a one-time link. You can always play without an account.';
-    $<HTMLFormElement>('.acct-form').onsubmit = async (e) => {
-      e.preventDefault();
-      submit.disabled = true;
-      msg.textContent = 'sending…';
-      try {
-        await sendMagicLink(input.value.trim());
-        msg.innerHTML = '';
-        const strong = document.createElement('b');
-        strong.textContent = `check ${input.value.trim()}`;
-        msg.append(strong, document.createTextNode(' and click the link. It brings you right back here.'));
-        input.disabled = true;
-      } catch (err) {
-        msg.textContent = (err as Error).message;
-        submit.disabled = false;
-      }
-    };
-  } else {
-    $('#acct-title').textContent = 'pick a username';
-    $('.acct-reason').textContent = 'this is how you show up on the leaderboard and the monster gallery';
-    input.type = 'text';
-    input.placeholder = 'doodle_master';
-    input.maxLength = 16;
-    input.pattern = '[A-Za-z0-9_]{3,16}';
-    input.autocomplete = 'username';
-    submit.textContent = 'save';
-    $('.acct-fine').textContent = '3–16 letters, numbers or _';
-    $<HTMLFormElement>('.acct-form').onsubmit = async (e) => {
-      e.preventDefault();
-      submit.disabled = true;
-      msg.textContent = 'saving…';
-      try {
-        const name = await claimUsername(input.value.trim());
-        account = { ...account, username: name };
-        for (const cb of listeners) cb(account);
-        closeDialog();
-        const next = afterReady;
-        afterReady = null;
-        next?.();
-      } catch (err) {
-        msg.textContent = (err as Error).message;
-        submit.disabled = false;
-      }
-    };
-  }
-  setTimeout(() => input.focus(), 30);
+  $<HTMLFormElement>('.acct-form').onsubmit = async (e) => {
+    e.preventDefault();
+    submit.disabled = true;
+    msg.textContent = 'saving…';
+    try {
+      const name = await claimName(input.value.trim());
+      account = { username: name };
+      emit();
+      const next = afterReady;
+      closeDialog();
+      next?.();
+    } catch (err) {
+      msg.textContent = (err as Error).message;
+      submit.disabled = false;
+    }
+  };
+  setTimeout(() => input.select(), 30);
 }
 
 function closeDialog(): void {
+  afterReady = null;
   dialog?.remove();
   dialog = null;
 }

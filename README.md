@@ -57,12 +57,11 @@ One-time setup for **penstrike.paycoach.app**:
 
 ## Accounts, leaderboard & monster gallery (Supabase)
 - Project: **penstrike** (`lyzktwgegfujkyilpfev`, PROFITLEAK org). The schema and security rules live in `supabase/migrations/`.
-- Client: `src/net/backend.ts` (API) and `src/net/accountUi.ts` (sign-in chip and dialog, shared by the landing page and the game).
-- **Guest play always works.** Signing in (email magic link, no password) is only needed to post scores and publish or report monsters.
+- Client: `src/net/backend.ts` (API) and `src/net/accountUi.ts` (name chip and dialog, shared by the landing page and the game).
+- **Guest play always works.** Posting scores and publishing or reporting monsters only needs a **name** (no email, no password, no dashboard setup).
+- How names work: the browser makes a random secret and keeps it in localStorage; the server stores only its sha256 hash. Every write is a database function that takes that secret; the tables have no direct API access. Limits: 5 new names per IP per day, 10 monsters per player and 20 per IP per day.
+- Trade-off: clearing browser data, or switching device, loses the name (it can't be reclaimed because it's taken). Fine for an arcade board; add real accounts later if people care.
 - **Leaderboard** shows each player's best run. The server rejects implausible runs (score vs. kills/wave, wave vs. run time) and limits posts to one every 20 s. That stops casual cheating, but it isn't cheat-proof, because the game runs in the browser.
 - **Gallery** monsters appear immediately. 3 reports from different players hide one. To review: Supabase → Table Editor → `monsters`, set `hidden` back to `false` to restore, or delete the row.
 
-One-time Supabase dashboard setup (needed for sign-in links to work):
-1. **Authentication → URL Configuration → Site URL**: your live domain, e.g. `https://penstrike.paycoach.app`.
-2. **Redirect URLs**: add `https://penstrike.paycoach.app/**` and `http://localhost:5173/**`.
-3. Before launch, set up **Authentication → Emails → SMTP** with a real sender (e.g. Resend's free tier). Supabase's built-in sender only allows a few emails per hour.
+The old email-account tables were renamed to `legacy_*` (they were empty). You can delete them in Table Editor whenever.

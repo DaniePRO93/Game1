@@ -1,20 +1,58 @@
-import { createClient, type Session } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 /**
- * Supabase backend: accounts (email magic link), leaderboard, monster gallery.
+ * Supabase backend: player names, leaderboard, monster gallery.
  * The publishable key is meant to be public; all access is enforced by
- * row-level security and the RPC functions in supabase/migrations.
+ * the RPC functions in supabase/migrations (tables have no direct access).
  */
 const SUPABASE_URL = 'https://lyzktwgegfujkyilpfev.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_40eweFsdbCLQr6QP7TvtPw_ffB4EfDq';
 
+// No Supabase Auth: a player is a name plus a random secret kept in this
+// browser. The server only stores a hash of the secret (see
+// supabase/migrations/*_name_only_players.sql).
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' },
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
 });
 
+const ID_KEY = 'penstrike.player.v1';
+
 export interface Account {
-  session: Session | null;
   username: string | null;
+}
+
+interface StoredId {
+  secret: string;
+  username: string | null;
+}
+
+function load(): StoredId | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(ID_KEY) ?? 'null') as StoredId | null;
+    return v && typeof v.secret === 'string' && v.secret.length >= 32 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function save(v: StoredId): void {
+  try {
+    localStorage.setItem(ID_KEY, JSON.stringify(v));
+  } catch {
+    /* private mode: the name lasts for this page only */
+  }
+}
+
+let id: StoredId | null = load();
+
+function secret(): string {
+  if (!id) {
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    const s = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    id = { secret: s, username: null };
+    save(id);
+  }
+  return id.secret;
 }
 
 export interface LeaderRow {
@@ -56,39 +94,22 @@ async function call<T>(p: PromiseLike<{ data: T; error: unknown }>): Promise<T> 
   return data;
 }
 
-export async function getAccount(): Promise<Account> {
-  const { data } = await supabase.auth.getSession();
-  const session = data.session;
-  if (!session) return { session: null, username: null };
-  const { data: prof } = await supabase.from('profiles').select('username').eq('id', session.user.id).maybeSingle();
-  return { session, username: prof?.username ?? null };
+export function getAccount(): Account {
+  return { username: id?.username ?? null };
 }
 
-export function onAuthChange(cb: () => void): void {
-  supabase.auth.onAuthStateChange(() => cb());
-}
-
-/** Email a magic sign-in link that returns to the current page. */
-export async function sendMagicLink(email: string): Promise<void> {
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: `${location.origin}${location.pathname}` },
-  });
-  if (error) throw new Error(msg(error));
-}
-
-export async function signOut(): Promise<void> {
-  await supabase.auth.signOut();
-}
-
-export async function claimUsername(name: string): Promise<string> {
-  const row = await call(supabase.rpc('claim_username', { p_username: name }));
-  return (row as { username: string }).username;
+/** Pick (or change) the name this browser plays under. */
+export async function claimName(name: string): Promise<string> {
+  const username = (await call(supabase.rpc('claim_name', { p_username: name, p_secret: secret() }))) as string;
+  id = { secret: secret(), username };
+  save(id);
+  return username;
 }
 
 export async function submitScore(r: RunResult): Promise<void> {
   await call(
     supabase.rpc('submit_score', {
+      p_secret: secret(),
       p_score: Math.round(r.score),
       p_wave: r.wave,
       p_kills: r.kills,
@@ -109,52 +130,13 @@ export async function getStats(): Promise<{ players: number; runs: number; monst
 }
 
 export async function publishMonster(kind: 'enemy' | 'boss', token: string, name: string): Promise<number> {
-  return (await call(supabase.rpc('publish_monster', { p_kind: kind, p_token: token, p_name: name }))) as number;
+  return (await call(supabase.rpc('publish_monster', { p_secret: secret(), p_kind: kind, p_token: token, p_name: name }))) as number;
 }
 
 export async function recentMonsters(limit = 12): Promise<MonsterRow[]> {
-  const rows = (await call(
-    supabase
-      .from('monsters')
-      .select('id, kind, token, name, created_at, profiles(username)')
-      .order('created_at', { ascending: false })
-      .limit(limit),
-  )) as unknown as (Omit<MonsterRow, 'username'> & { profiles: { username: string } | null })[];
-  return rows.map((r) => ({ ...r, username: r.profiles?.username ?? 'someone' }));
+  return (await call(supabase.rpc('get_monsters', { p_limit: limit }))) as MonsterRow[];
 }
 
-export async function reportMonster(id: number): Promise<void> {
-  await call(supabase.rpc('report_monster', { p_id: id }));
-}
-
-// A run finished while signed out is kept so it can be posted after the
-// magic-link round trip (which reloads the page).
-const PENDING_KEY = 'doodle-fps.pending-run.v1';
-
-export function savePendingRun(r: RunResult): void {
-  try {
-    localStorage.setItem(PENDING_KEY, JSON.stringify({ ...r, at: Date.now() }));
-  } catch {
-    /* ignore */
-  }
-}
-
-export function takePendingRun(): RunResult | null {
-  try {
-    const raw = localStorage.getItem(PENDING_KEY);
-    localStorage.removeItem(PENDING_KEY);
-    if (!raw) return null;
-    const r = JSON.parse(raw) as RunResult & { at: number };
-    return Date.now() - r.at < 2 * 3600 * 1000 ? r : null;
-  } catch {
-    return null;
-  }
-}
-
-export function peekPendingRun(): boolean {
-  try {
-    return !!localStorage.getItem(PENDING_KEY);
-  } catch {
-    return false;
-  }
+export async function reportMonster(monsterId: number): Promise<void> {
+  await call(supabase.rpc('report_monster', { p_secret: secret(), p_id: monsterId }));
 }
