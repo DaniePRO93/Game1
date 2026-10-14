@@ -204,6 +204,7 @@ export class Game {
   private nudgeRoll = new Spring(140, 12);
   private hurtAngle = 0;
   private tmpV = new THREE.Vector3();
+  private sun!: THREE.DirectionalLight;
 
   constructor(private hud: Hud, private sfx: Sfx, private input: Input) {
     this.level = buildLevel();
@@ -216,7 +217,7 @@ export class Game {
 
     // Lighting: Lambert output is (ambient + sun·N)/π, tuned so lit tops ≈ 1.
     this.world.add(new THREE.AmbientLight(0xffffff, 0.4 * Math.PI));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.7 * Math.PI);
+    const sun = (this.sun = new THREE.DirectionalLight(0xffffff, 0.7 * Math.PI));
     sun.position.set(45, 100, 30);
     sun.target.position.set(0, 0, 0);
     sun.castShadow = true;
@@ -261,6 +262,15 @@ export class Game {
 
   setSensitivity(mult: number): void {
     this.player.sensitivity = BASE_SENSITIVITY * mult;
+  }
+
+  /** Phones: smaller shadow map (the world is static, so it's baked once anyway). */
+  setShadowSize(px: number): void {
+    if (this.sun.shadow.mapSize.x === px) return;
+    this.sun.shadow.mapSize.set(px, px);
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
+    this.shadowsDirty = true;
   }
 
   setAspect(a: number): void {

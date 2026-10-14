@@ -43,6 +43,20 @@
       <div id="hud-scope" style="display: none"></div>
       <div id="hud-hint"></div>
       <div id="hud-flash"></div>
+      <div id="touch" style="display: none">
+        <div class="t-move"></div>
+        <div class="t-look"></div>
+        <div class="t-stick"><div class="t-knob"></div></div>
+        <button type="button" data-t="pause" class="t-btn t-pause" aria-label="pause">II</button>
+        <button type="button" data-t="slow" class="t-btn t-slow">SLOW</button>
+        <button type="button" data-t="swap" class="t-btn t-swap">SWAP</button>
+        <button type="button" data-t="reload" class="t-btn t-reload">R</button>
+        <button type="button" data-t="aim" class="t-btn t-aim">AIM</button>
+        <button type="button" data-t="slide" class="t-btn t-slide">SLIDE</button>
+        <button type="button" data-t="jump" class="t-btn t-jump">JUMP</button>
+        <button type="button" data-t="fire" class="t-btn t-fire">FIRE</button>
+      </div>
+      <div id="rotate">turn your phone sideways ↻</div>
       <div class="bl">
         <div class="hp-row">
           <span class="lbl">HP</span>
@@ -141,12 +155,20 @@
     <div id="options" class="screen" style="display: none">
       <div class="sheet small-sheet options-sheet">
         <div class="screen-top"><button class="back" data-back="menu">← menu</button><h2>options</h2></div>
-        <label class="sens"><span>aim sensitivity</span><input id="sens-menu" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
+        <label class="sens desktop-only"><span>aim sensitivity</span><input id="sens-menu" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
+        <label class="sens touch-only"><span>touch look speed</span><input id="look-menu" class="look-input" type="range" min="0.3" max="3" step="0.05" value="1" /><output class="look-val">1.00×</output></label>
         <label class="sens"><span>screen shake</span><input id="shake-menu" class="shake-input" type="range" min="0" max="1" step="0.05" value="0.6" /><output class="shake-val">60%</output></label>
         <p id="shake-reduced" class="small reduced-note" style="display: none">your system asks for reduced motion, so shake is kept extra gentle</p>
         <label class="toggle"><input type="checkbox" id="dmg-nums" checked /> <span>damage numbers</span></label>
         <label class="toggle"><input type="checkbox" id="color-mode" /> <span>color mode in single player (overrides the map's look)</span></label>
-        <ul class="controls">
+        <ul class="controls touch-only">
+          <li><b>Left thumb</b> move (push a little to walk slowly)</li>
+          <li><b>Right thumb</b> drag to look · hold <b>FIRE</b> and drag to aim while shooting</li>
+          <li><b>AIM</b> toggles aiming · <b>JUMP</b> twice for the air jump · <b>SLIDE</b> while running</li>
+          <li><b>SWAP</b> next weapon · <b>R</b> reload · hold <b>SLOW</b> to slow time</li>
+          <li><b>3 kills</b> in a row: minigun · <b>5</b>: railgun · top quarter = headshot</li>
+        </ul>
+        <ul class="controls desktop-only">
           <li><b>WASD</b> move · <b>SPACE</b> jump, again in the air</li>
           <li><b>C</b> slide (fits under low gaps) · jump out of a slide to keep speed</li>
           <li><b>Mouse</b> look · <b>click</b> shoot · <b>right-click</b> or <b>F</b> aim</li>
@@ -206,7 +228,8 @@
     <div id="pause" class="screen" style="display: none">
       <div class="sheet small-sheet">
         <h2 id="pause-title">paused</h2>
-        <label class="sens"><span>aim sensitivity</span><input id="sens-pause" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
+        <label class="sens desktop-only"><span>aim sensitivity</span><input id="sens-pause" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
+        <label class="sens touch-only"><span>touch look speed</span><input id="look-pause" class="look-input" type="range" min="0.3" max="3" step="0.05" value="1" /><output class="look-val">1.00×</output></label>
         <label class="sens"><span>screen shake</span><input id="shake-pause" class="shake-input" type="range" min="0" max="1" step="0.05" value="0.6" /><output class="shake-val">60%</output></label>
         <button id="btn-resume" class="big">click to resume</button>
         <button id="btn-quit">quit to menu</button>

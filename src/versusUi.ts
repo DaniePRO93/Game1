@@ -1,3 +1,4 @@
+import { IS_TOUCH } from './game/input';
 import { DrawPad, PAD_H, PAD_W, heroExampleStrokes, paintStrokes } from './draw/drawPad';
 import { buildSprite, DoodleSprite } from './draw/sprite';
 import type { Game } from './game/game';
@@ -167,7 +168,7 @@ export function initVersus(ctx: VersusCtx) {
       } else {
         // Pointer lock needs a click, so the round starts from the pause card.
         $('pause-title').textContent = `round ${room.state.round}: ${info.name}`;
-        $('btn-resume').textContent = 'click to play';
+        $('btn-resume').textContent = IS_TOUCH ? 'tap to play' : 'click to play';
         $('btn-quit').textContent = 'leave the game';
         ctx.show('paused');
       }

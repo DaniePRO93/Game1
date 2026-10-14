@@ -11,7 +11,8 @@ import { currentAccount, initAccount, mountAccountChip, requireAccount } from '.
 import { RunResult, publishMonster, submitScore } from './net/backend';
 import { UPGRADES, Upgrade } from './game/upgrades';
 import { MAPS, MapId, mapInfo } from './world/level';
-import { Input } from './game/input';
+import { IS_TOUCH, Input } from './game/input';
+import { TouchControls } from './ui/touchControls';
 import { PostFX } from './render/postfx';
 import { Hud } from './ui/hud';
 import { placeDoodles } from './ui/marginDoodles';
@@ -58,7 +59,8 @@ function show(s: Screen): void {
 }
 
 function resize(): void {
-  const pr = Math.min(devicePixelRatio, 1.5);
+  // Phones have tiny, very dense screens and weaker GPUs: render at 1x.
+  const pr = Math.min(devicePixelRatio, IS_TOUCH ? 1 : 1.5);
   renderer.setPixelRatio(pr);
   renderer.setSize(innerWidth, innerHeight, false);
   postfx.setSize(innerWidth, innerHeight, pr);
@@ -383,6 +385,7 @@ function startGame(fresh: boolean): void {
     doodles = makeDoodles();
   }
   game.start(doodles, difficulty);
+  if (IS_TOUCH) hud.hint('left thumb: move · right thumb: look · drag on FIRE to aim while shooting', 6);
   show('playing');
   if (testMode) input.locked = true;
   else input.lock();
@@ -422,14 +425,43 @@ $('btn-quit').onclick = () => {
 };
 
 input.onLockChange = (locked) => {
+  if (!locked) touch?.reset();
   if (locked && screen === 'paused') show('playing');
   else if (!locked && screen === 'playing' && (!game.dead || versus.playing)) {
     $('pause-title').textContent = versus.playing ? 'match still running!' : 'paused';
-    $('btn-resume').textContent = versus.playing ? 'click to play' : 'click to resume';
+    $('btn-resume').textContent = `${IS_TOUCH ? 'tap' : 'click'} to ${versus.playing ? 'play' : 'resume'}`;
     $('btn-quit').textContent = versus.playing ? 'leave the game' : 'quit to drawing';
     show('paused');
   }
 };
+
+// ── Phone controls ───────────────────────────────────────────────────────
+const touch = IS_TOUCH ? new TouchControls($('touch'), input, () => input.unlock()) : null;
+if (IS_TOUCH) game.setShadowSize(1024);
+const LOOK_KEY = 'doodle-fps.touchlook.v1';
+let lookSpeed = 1;
+try {
+  lookSpeed = Number(localStorage.getItem(LOOK_KEY)) || 1;
+} catch {
+  /* default 1x */
+}
+const lookInputs = Array.from(document.querySelectorAll<HTMLInputElement>('.look-input'));
+function setLook(v: number, save: boolean): void {
+  lookSpeed = Math.min(3, Math.max(0.3, v));
+  if (touch) touch.lookSpeed = lookSpeed;
+  for (const el of lookInputs) {
+    el.value = String(lookSpeed);
+    el.parentElement!.querySelector('output')!.textContent = `${lookSpeed.toFixed(2)}×`;
+  }
+  if (!save) return;
+  try {
+    localStorage.setItem(LOOK_KEY, String(lookSpeed));
+  } catch {
+    /* ignore */
+  }
+}
+for (const el of lookInputs) el.addEventListener('input', () => setLook(Number(el.value), true));
+setLook(lookSpeed, false);
 
 // ── Versus ───────────────────────────────────────────────────────────────
 const versus = initVersus({

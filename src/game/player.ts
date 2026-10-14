@@ -120,10 +120,15 @@ export class Player implements Body {
     if (k.has('KeyS') || k.has('ArrowDown')) fz += 1;
     if (k.has('KeyA') || k.has('ArrowLeft')) fx -= 1;
     if (k.has('KeyD') || k.has('ArrowRight')) fx += 1;
-    const len = Math.hypot(fx, fz);
+    let len = Math.hypot(fx, fz);
     if (len > 0) {
       fx /= len;
       fz /= len;
+    } else {
+      // Touch stick is analog: a small push walks slowly.
+      fx = input.moveX || 0;
+      fz = input.moveY || 0;
+      len = Math.hypot(fx, fz);
     }
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);

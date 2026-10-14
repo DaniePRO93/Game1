@@ -1405,3 +1405,247 @@ details.more[open] > *:not(summary) {
     animation-duration: 0.15s;
   }
 }
+
+/* ── Touch controls (phones/tablets; body.touch is set by touchControls.ts) ── */
+.touch-only {
+  display: none !important;
+}
+body.touch .touch-only {
+  display: flex !important;
+}
+body.touch ul.touch-only {
+  display: block !important;
+}
+body.touch .desktop-only {
+  display: none !important;
+}
+#touch {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+}
+#touch .t-move,
+#touch .t-look {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: auto;
+  touch-action: none;
+}
+#touch .t-move {
+  left: 0;
+  width: 42%;
+}
+#touch .t-look {
+  right: 0;
+  width: 58%;
+}
+.t-stick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.t-stick::before {
+  content: '';
+  position: absolute;
+  left: -60px;
+  top: -60px;
+  width: 120px;
+  height: 120px;
+  border: 3px solid var(--ink-soft);
+  border-radius: 50% 47% 52% 49%;
+  background: rgba(247, 244, 236, 0.35);
+}
+.t-stick.on {
+  opacity: 1;
+}
+.t-knob {
+  position: absolute;
+  left: -26px;
+  top: -26px;
+  width: 52px;
+  height: 52px;
+  margin: 0;
+  border: 3px solid var(--ink);
+  border-radius: 48% 52% 50% 46%;
+  background: rgba(247, 244, 236, 0.85);
+}
+.t-btn {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  font-family: 'Bangers', 'Impact', sans-serif;
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: var(--ink);
+  background: rgba(247, 244, 236, 0.72);
+  border: 3px solid var(--ink);
+  border-radius: 50% 46% 52% 48%;
+  box-shadow: 2px 3px 0 var(--ink-soft);
+  -webkit-tap-highlight-color: transparent;
+}
+.t-btn.down,
+.t-btn.on {
+  background: #ffe14d;
+  transform: scale(0.92);
+  box-shadow: 1px 1px 0 var(--ink-soft);
+}
+.t-fire {
+  right: calc(22px + env(safe-area-inset-right));
+  bottom: 58px;
+  width: 92px;
+  height: 92px;
+  font-size: 24px;
+  color: #fff;
+  background: rgba(192, 48, 42, 0.82);
+  text-shadow: 2px 2px 0 var(--ink);
+}
+.t-fire.down {
+  background: #e0473f;
+}
+.t-jump {
+  right: calc(128px + env(safe-area-inset-right));
+  bottom: 22px;
+  width: 70px;
+  height: 70px;
+  font-size: 19px;
+}
+.t-slide {
+  right: calc(134px + env(safe-area-inset-right));
+  bottom: 104px;
+}
+.t-aim {
+  right: calc(40px + env(safe-area-inset-right));
+  bottom: 162px;
+}
+.t-reload {
+  right: calc(110px + env(safe-area-inset-right));
+  bottom: 176px;
+  width: 46px;
+  height: 46px;
+  font-size: 18px;
+}
+.t-swap {
+  right: calc(208px + env(safe-area-inset-right));
+  bottom: 34px;
+  width: 50px;
+  height: 50px;
+  font-size: 13px;
+}
+.t-slow {
+  right: calc(204px + env(safe-area-inset-right));
+  bottom: 100px;
+  width: 50px;
+  height: 50px;
+  font-size: 13px;
+}
+#hud.versus .t-slow {
+  display: none;
+}
+.t-pause {
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 36px;
+  font-size: 16px;
+  border-radius: 10px 8px 11px 9px;
+}
+.t-pause.down {
+  transform: translateX(-50%) scale(0.92);
+}
+#rotate {
+  display: none;
+}
+
+/* Phone HUD: smaller, moved out from under the thumbs. */
+body.touch #hud {
+  font-size: 16px;
+}
+body.touch #hud .small {
+  font-size: 13px;
+}
+body.touch .tl {
+  left: calc(14px + env(safe-area-inset-left));
+  top: 8px;
+}
+body.touch .tr {
+  right: calc(14px + env(safe-area-inset-right));
+  top: 8px;
+}
+body.touch .bl {
+  left: calc(14px + env(safe-area-inset-left));
+  top: 32px;
+  bottom: auto;
+}
+body.touch .bar.hp {
+  width: 120px;
+}
+body.touch #hud-ammo {
+  font-size: 18px;
+  margin-top: 2px;
+}
+body.touch #hud-ammo b {
+  font-size: 28px;
+}
+body.touch #hud-pips,
+body.touch #hud-weapons,
+body.touch #hud-weapon-hint,
+body.touch #hud-meter .key {
+  display: none;
+}
+body.touch .br {
+  right: calc(14px + env(safe-area-inset-right));
+  top: 76px;
+  bottom: auto;
+}
+body.touch #hud-weapon-name {
+  font-size: 18px;
+}
+body.touch #hud-meter {
+  bottom: 8px;
+  width: min(220px, 30vw);
+}
+body.touch #hud-hint {
+  bottom: auto;
+  top: 52px;
+  font-size: 14px;
+}
+body.touch #hud-banner {
+  font-size: 34px;
+}
+body.touch .comic {
+  font-size: 26px;
+}
+body.touch .comic.big {
+  font-size: 34px;
+}
+body.touch #hud-board {
+  top: 70px;
+  font-size: 15px;
+  min-width: 140px;
+}
+@media (orientation: portrait) {
+  body.touch #rotate {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+    font-size: 28px;
+    background: var(--paper);
+    pointer-events: auto;
+  }
+}
