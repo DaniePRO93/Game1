@@ -3,6 +3,9 @@ import type { Box } from '../world/collision';
 import { doodleMaterial, dropTex, splatTex, spriteMaterial, starTex } from '../render/ink';
 import type { Enemy } from './enemy';
 
+/** Anything drawn as a doodle billboard that can tear apart (enemies, versus players). */
+export type Doodled = Pick<Enemy, 'width' | 'height' | 'facing' | 'pos' | 'sprite' | 'mesh'> & { def: { kind: string; ink: THREE.Color } };
+
 interface Particle {
   obj: THREE.Object3D;
   vel: THREE.Vector3;
@@ -31,7 +34,7 @@ export class FX {
   }
 
   /** Tear an enemy's drawing into tumbling paper shards. */
-  shatter(e: Enemy, impulse: THREE.Vector3): void {
+  shatter(e: Doodled, impulse: THREE.Vector3): void {
     const cols = e.def.kind === 'boss' ? 5 : 3;
     const rows = e.def.kind === 'boss' ? 6 : 4;
     const cw = e.width / cols;
@@ -72,7 +75,7 @@ export class FX {
   }
 
   /** Rub an enemy out top-down, shedding eraser crumbs. */
-  erase(e: Enemy, crumb: THREE.Color): void {
+  erase(e: Doodled, crumb: THREE.Color): void {
     const mat = doodleMaterial(e.sprite.texture, e.def.ink);
     const geo = e.mesh.geometry.clone();
     const m = new THREE.Mesh(geo, mat);

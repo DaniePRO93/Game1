@@ -53,9 +53,11 @@ export type Trigger =
   /** Sets velocity when the player touches it (jump pads, trampolines). Axes left undefined keep their speed. */
   | { kind: 'launch'; box: Box; vel: Partial<Vec3> }
   /** Pushes the player upward while inside (wind / updraft). */
-  | { kind: 'updraft'; box: Box; lift: number; maxUp: number };
+  | { kind: 'updraft'; box: Box; lift: number; maxUp: number }
+  /** Carries you along while you stand on it. */
+  | { kind: 'conveyor'; box: Box; vel: { x: number; z: number } };
 
-export type MapId = 'construction' | 'rooftops' | 'playground' | 'treetops';
+export type MapId = 'construction' | 'rooftops' | 'factory' | 'playground' | 'treetops';
 
 export interface Level {
   id: MapId;
@@ -232,6 +234,38 @@ export function createBuilder(o: BuildOpts) {
     }
   };
 
+  /**
+   * Conveyor belt along its long axis, `speed` m/s (negative = toward -x/-z).
+   * 0.35m tall so you can step onto it. Chevrons on top show the direction.
+   */
+  const conveyor = (x0: number, z0: number, x1: number, z1: number, speed: number) => {
+    const alongX = x1 - x0 > z1 - z0;
+    const h = 0.35;
+    box((x0 + x1) / 2, 0, (z0 + z1) / 2, x1 - x0, h, z1 - z0, 'tone');
+    triggers.push({
+      kind: 'conveyor',
+      box: { min: { x: x0, y: h - 0.05, z: z0 }, max: { x: x1, y: h + 0.4, z: z1 } },
+      vel: { x: alongX ? speed : 0, z: alongX ? 0 : speed },
+    });
+    const len = alongX ? x1 - x0 : z1 - z0;
+    const wid = alongX ? z1 - z0 : x1 - x0;
+    const n = Math.max(2, Math.floor(len / 3));
+    const mat = new THREE.MeshBasicMaterial({ map: arrowTex, transparent: true, depthWrite: false, opacity: 0.8 });
+    // Arrow texture points "up" (+v); lay it flat and turn it to face the belt direction.
+    const yaw = alongX ? (speed > 0 ? -Math.PI / 2 : Math.PI / 2) : speed > 0 ? Math.PI : 0;
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(wid * 0.7, wid * 0.7), mat);
+      m.rotation.set(-Math.PI / 2, 0, 0);
+      m.rotateZ(yaw);
+      decor.add(m);
+      animated.push((t) => {
+        const k = (((i / n + (t * speed) / len) % 1) + 1) % 1;
+        const a = alongX ? x0 + k * len : z0 + k * len;
+        m.position.set(alongX ? a : (x0 + x1) / 2, h + 0.02, alongX ? (z0 + z1) / 2 : a);
+      });
+    }
+  };
+
   // Ground: collision slab + visible plane.
   boxes.push({ min: { x: -200, y: -2, z: -200 }, max: { x: 200, y: 0, z: 200 } });
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), styleMaterial('plain'));
@@ -273,6 +307,7 @@ export function createBuilder(o: BuildOpts) {
     stairs,
     launchPad,
     updraft,
+    conveyor,
     perimeter,
     v,
     /** Set the color-mode paint for boxes added next (null = default by style). */

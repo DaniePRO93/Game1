@@ -1,21 +1,22 @@
 /**
- * Pre-game drawing pad with two sheets: the regular enemy and the boss.
+ * Pre-game drawing pad with three sheets: the regular enemy, the boss, and
+ * "you" (your fighter in versus).
  * Strokes persist in localStorage so your doodles come back next session.
  */
 import type { Pt, Stroke } from '../game/share';
 
-export type Sheet = 'enemy' | 'boss';
+export type Sheet = 'enemy' | 'boss' | 'me';
 
 const W = 480;
 const H = 600;
 const INK = '#23287e';
-const STORE_KEYS: Record<Sheet, string> = { enemy: 'doodle-fps.enemy.v1', boss: 'doodle-fps.boss.v1' };
+const STORE_KEYS: Record<Sheet, string> = { enemy: 'doodle-fps.enemy.v1', boss: 'doodle-fps.boss.v1', me: 'doodle-fps.me.v1' };
 
 export class DrawPad {
   /** Visible canvas: shows the active sheet. */
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private sheets: Record<Sheet, Stroke[]> = { enemy: [], boss: [] };
+  private sheets: Record<Sheet, Stroke[]> = { enemy: [], boss: [], me: [] };
   private current: Stroke | null = null;
   sheet: Sheet = 'enemy';
   onChange: () => void = () => {};
@@ -35,7 +36,7 @@ export class DrawPad {
 
     host.append(guide, this.canvas);
     this.bind();
-    for (const k of ['enemy', 'boss'] as Sheet[]) this.load(k);
+    for (const k of ['enemy', 'boss', 'me'] as Sheet[]) this.load(k);
     this.redraw();
   }
 
@@ -78,7 +79,7 @@ export class DrawPad {
 
   /** Replace the active sheet with its built-in example doodle. */
   example(): void {
-    this.sheets[this.sheet] = this.sheet === 'boss' ? bossExampleStrokes() : exampleStrokes();
+    this.sheets[this.sheet] = exampleFor(this.sheet);
     this.redraw();
     this.save(this.sheet);
   }
@@ -86,7 +87,7 @@ export class DrawPad {
   /** Fill a sheet with its example if it is empty. */
   ensure(sheet: Sheet): void {
     if (!this.isEmpty(sheet)) return;
-    this.sheets[sheet] = sheet === 'boss' ? bossExampleStrokes() : exampleStrokes();
+    this.sheets[sheet] = exampleFor(sheet);
     this.save(sheet);
     if (sheet === this.sheet) this.redraw();
   }
@@ -221,6 +222,35 @@ function circle(cx: number, cy: number, r: number, n = 28, wob = 0): Stroke {
     const rr = r + Math.sin(a * 5) * wob;
     s.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
   }
+  return s;
+}
+
+function exampleFor(sheet: Sheet): Stroke[] {
+  return sheet === 'boss' ? bossExampleStrokes() : sheet === 'me' ? heroExampleStrokes() : exampleStrokes();
+}
+
+/** Default "you": a grinning doodle with a cap and a pencil. */
+export function heroExampleStrokes(): Stroke[] {
+  const cx = W / 2;
+  const s: Stroke[] = [];
+  s.push(circle(cx, 140, 68, 32, 1.5));
+  // Cap.
+  s.push([[cx - 66, 120], [cx - 50, 80], [cx, 66], [cx + 50, 80], [cx + 66, 120]]);
+  s.push([[cx + 40, 104], [cx + 110, 110]]);
+  // Eyes + grin.
+  s.push(circle(cx - 24, 140, 7, 10));
+  s.push(circle(cx + 24, 140, 7, 10));
+  s.push([[cx - 30, 172], [cx - 10, 186], [cx + 10, 186], [cx + 30, 172]]);
+  // Body.
+  s.push([[cx - 48, 215], [cx - 56, 330], [cx - 46, 400], [cx + 46, 400], [cx + 56, 330], [cx + 48, 215], [cx - 48, 215]]);
+  s.push([[cx - 20, 260], [cx + 20, 260]]);
+  // Arms: one waving, one holding a pencil.
+  s.push([[cx - 52, 235], [cx - 100, 190], [cx - 110, 140]]);
+  s.push([[cx + 52, 235], [cx + 105, 290], [cx + 120, 340]]);
+  s.push([[cx + 110, 360], [cx + 135, 300], [cx + 150, 306], [cx + 125, 366], [cx + 110, 360]]);
+  // Legs.
+  s.push([[cx - 28, 400], [cx - 36, 480], [cx - 40, 560], [cx - 70, 566]]);
+  s.push([[cx + 28, 400], [cx + 36, 480], [cx + 40, 560], [cx + 70, 566]]);
   return s;
 }
 

@@ -12,11 +12,11 @@ import { MAPS, MapId, mapInfo } from './world/level';
 import { Input } from './game/input';
 import { PostFX } from './render/postfx';
 import { Hud } from './ui/hud';
+import { Screen, initVersus } from './versusUi';
 
 // All colors in this project are authored as final display values.
 THREE.ColorManagement.enabled = false;
 
-type Screen = 'menu' | 'playing' | 'paused' | 'over' | 'upgrade';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -41,6 +41,7 @@ const screens = {
   paused: document.getElementById('pause')!,
   over: document.getElementById('over')!,
   upgrade: document.getElementById('upgrade')!,
+  versus: document.getElementById('versus')!,
 };
 let screen: Screen = 'menu';
 
@@ -50,6 +51,7 @@ function show(s: Screen): void {
   screens.paused.style.display = s === 'paused' ? '' : 'none';
   screens.over.style.display = s === 'over' ? '' : 'none';
   screens.upgrade.style.display = s === 'upgrade' ? '' : 'none';
+  screens.versus.style.display = s === 'versus' ? '' : 'none';
   hud.show(s === 'playing' || s === 'paused' || s === 'upgrade');
 }
 
@@ -160,6 +162,12 @@ for (const tab of Array.from(document.querySelectorAll<HTMLButtonElement>('.tab'
 
 let statTimer = 0;
 function refreshStats(): void {
+  if (pad.sheet === 'me') {
+    $('stat-who').textContent = 'you, in versus';
+    $('stat-label').textContent = 'same HP and speed for everyone';
+    for (const k of ['hp', 'speed', 'size', 'head']) $(`stat-${k}`).style.width = '0%';
+    return;
+  }
   const sheet = pad.sheet === 'boss' && pad.isEmpty('boss') ? 'enemy' : pad.sheet;
   $('stat-who').textContent = pad.sheet === 'boss' ? (pad.isEmpty('boss') ? 'boss (empty: uses your enemy)' : 'your boss') : 'your enemy';
   const sp = pad.isEmpty(sheet) ? null : buildSprite(pad.renderSheet(sheet));
@@ -303,12 +311,40 @@ $('btn-start').onclick = () => startGame(true);
 $('btn-again').onclick = () => startGame(false);
 $('btn-redraw').onclick = () => show('menu');
 $('btn-resume').onclick = () => input.lock();
-$('btn-quit').onclick = () => show('menu');
+$('btn-quit').onclick = () => {
+  if (versus.active) versus.leave();
+  else show('menu');
+};
 
 input.onLockChange = (locked) => {
   if (locked && screen === 'paused') show('playing');
-  else if (!locked && screen === 'playing' && !game.dead) show('paused');
+  else if (!locked && screen === 'playing' && (!game.dead || versus.playing)) {
+    $('pause-title').textContent = versus.playing ? 'match still running!' : 'paused';
+    $('btn-resume').textContent = versus.playing ? 'click to play' : 'click to resume';
+    $('btn-quit').textContent = versus.playing ? 'leave the game' : 'quit to drawing';
+    show('paused');
+  }
 };
+
+// ── Versus ───────────────────────────────────────────────────────────────
+const versus = initVersus({
+  game,
+  pad,
+  hud,
+  input,
+  show,
+  screen: () => screen,
+  setLook: (on) => {
+    game.setColorMode(on);
+    postfx.colorMode = on;
+  },
+  restoreSolo: () => {
+    game.setMap(soloMap);
+    setColor(colorToggle.checked, false);
+  },
+  testMode,
+  params,
+});
 
 // ── Accounts, leaderboard, gallery ───────────────────────────────────────
 initAccount();
@@ -333,9 +369,12 @@ $('btn-publish').onclick = () => {
   requireAccount(async () => {
     msg.textContent = 'publishing…';
     try {
-      const token = await encodeShare(sheet === 'boss' ? { enemy: [], boss: pad.getStrokes('boss') } : { enemy: pad.getStrokes('enemy'), boss: [] });
-      await publishMonster(sheet, token, $<HTMLInputElement>('monster-name').value);
-      msg.textContent = `✓ your ${sheet} is in the gallery`;
+      // Your versus fighter is published like a regular enemy.
+      const kind = sheet === 'boss' ? 'boss' : 'enemy';
+      const strokes = pad.getStrokes(sheet);
+      const token = await encodeShare(kind === 'boss' ? { enemy: [], boss: strokes } : { enemy: strokes, boss: [] });
+      await publishMonster(kind, token, $<HTMLInputElement>('monster-name').value);
+      msg.textContent = `✓ your ${sheet === 'me' ? 'fighter' : sheet} is in the gallery`;
     } catch (err) {
       msg.textContent = `couldn't publish: ${(err as Error).message}`;
     }
@@ -380,9 +419,18 @@ if (testMode) {
     __example: exampleStrokes,
     __upgrades: UPGRADES,
     __map: (id: MapId) => pickSoloMap(id, true),
+    __versus: versus,
+    /** Render a map from straight above (for public/img/maps/*.webp). */
+    __topdown: (id: MapId) => {
+      pickSoloMap(id, true);
+      topdownMap = id;
+      for (const el of Object.values(screens)) el.style.display = 'none';
+      hud.show(false);
+    },
   });
 }
 
+let topdownMap: MapId | null = null;
 let last = performance.now();
 function frame(now: number): void {
   const realDt = Math.min(0.05, (now - last) / 1000);
@@ -391,8 +439,18 @@ function frame(now: number): void {
     renderer.shadowMap.needsUpdate = true;
     game.shadowsDirty = false;
   }
-  if (screen === 'playing') game.update(realDt);
-  else if (screen === 'menu') game.idle(realDt);
+  versus.tick(realDt);
+  if (topdownMap) game.topdown();
+  else if (versus.playing && game.versus && (screen === 'playing' || screen === 'paused')) {
+    // A versus match keeps running behind the pause card; just ignore input there.
+    if (screen === 'paused') {
+      input.keys.clear();
+      input.mouseDown = false;
+      input.rightDown = false;
+    }
+    game.update(realDt);
+  } else if (screen === 'playing') game.update(realDt);
+  else if (screen === 'menu' || screen === 'versus') game.idle(realDt);
   hud.tick(realDt);
   input.endFrame();
   postfx.render(game.world, game.overlay, game.camera, realDt, screen === 'menu' ? { slowmo: 0, damage: 0 } : game.postParams);

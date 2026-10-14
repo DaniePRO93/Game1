@@ -50,6 +50,8 @@ export class Hud {
     comboMult: $('hud-combo-mult'),
     comboFill: $('hud-combo-fill'),
     clock: $('hud-clock'),
+    board: $('hud-board'),
+    feed: $('hud-feed'),
   };
   private last = '';
   private hintTimer = 0;
@@ -60,6 +62,41 @@ export class Hud {
     this.el.weaponList.innerHTML = WEAPONS.map(
       (w, i) => `<div class="w" data-id="${w.id}"><span>${i + 1}</span> ${w.name}</div>`,
     ).join('');
+  }
+
+  /** Versus mode hides the wave/slow-mo parts and shows the scoreboard. */
+  setVersus(on: boolean): void {
+    this.el.root.classList.toggle('versus', on);
+    if (!on) {
+      this.el.board.innerHTML = '';
+      this.el.feed.innerHTML = '';
+    }
+  }
+
+  /** Versus scoreboard (sorted by kills). */
+  board(rows: { name: string; kills: number; ink: string; self: boolean }[], goal: number, timeLeft: number): void {
+    const t = Math.ceil(timeLeft / 1000);
+    const clock = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    const html =
+      `<div class="goal">first to ${goal} · ${clock}</div>` +
+      rows
+        .map((r) => `<div class="row${r.self ? ' self' : ''}"><span class="dot" style="background:${r.ink}"></span><span class="n"></span><b>${r.kills}</b></div>`)
+        .join('');
+    if (html === this.lastBoard) return;
+    this.lastBoard = html;
+    this.el.board.innerHTML = html;
+    const names = this.el.board.querySelectorAll('.n');
+    rows.forEach((r, i) => (names[i].textContent = r.self ? `${r.name} (you)` : r.name));
+  }
+  private lastBoard = '';
+
+  /** Kill feed line (fades after a few seconds). */
+  feed(text: string): void {
+    const line = document.createElement('div');
+    line.textContent = text;
+    this.el.feed.prepend(line);
+    while (this.el.feed.children.length > 4) this.el.feed.lastElementChild!.remove();
+    setTimeout(() => line.remove(), 5000);
   }
 
   show(v: boolean): void {

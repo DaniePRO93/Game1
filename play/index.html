@@ -27,6 +27,8 @@
         <div id="hud-boss-name">THE DOODLER</div>
         <div class="bar"><div id="hud-boss-fill" class="fill"></div></div>
       </div>
+      <div id="hud-board"></div>
+      <div id="hud-feed"></div>
       <div id="hud-banner"></div>
       <div id="hud-crosshair"></div>
       <div id="hud-hitmark"></div>
@@ -62,6 +64,7 @@
             <div class="tabs">
               <button class="tab active" data-sheet="enemy">enemy</button>
               <button class="tab" data-sheet="boss">boss</button>
+              <button class="tab" data-sheet="me">you (versus)</button>
             </div>
             <div id="pad"></div>
           </div>
@@ -84,6 +87,12 @@
               <div id="map-list" class="map-list"></div>
             </div>
             <button id="btn-start" class="big">Fight!</button>
+            <div class="versus-box">
+              <div class="title">versus <small>· 2-4 friends · first to 10</small></div>
+              <button id="btn-create">create a game</button>
+              <div class="join"><input id="vs-code-in" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false" /><button id="btn-join">join</button></div>
+              <div id="versus-msg"></div>
+            </div>
             <div class="row">
               <label class="toggle"><input type="checkbox" id="color-mode" /> <span>color mode</span></label>
               <button id="btn-share">share drawings</button>
@@ -111,9 +120,30 @@
       </div>
     </div>
 
+    <div id="versus" class="screen" style="display: none">
+      <div class="sheet vs-sheet">
+        <div class="vs-head">
+          <h2 id="vs-title">versus</h2>
+          <div class="vs-code">code <b id="vs-code"></b></div>
+          <button id="vs-copy">copy invite link</button>
+        </div>
+        <p id="vs-status"></p>
+        <div id="vs-players"></div>
+        <div id="vs-vote">
+          <div class="map-label">vote for the map</div>
+          <div id="vs-maps" class="map-list"></div>
+        </div>
+        <p id="vs-timer"></p>
+        <div class="vs-foot">
+          <button id="vs-leave">leave</button>
+          <span class="sub small">your fighter is your "you (versus)" drawing</span>
+        </div>
+      </div>
+    </div>
+
     <div id="pause" class="screen" style="display: none">
       <div class="sheet small-sheet">
-        <h2>paused</h2>
+        <h2 id="pause-title">paused</h2>
         <label class="sens"><span>aim sensitivity</span><input id="sens-pause" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
         <button id="btn-resume" class="big">click to resume</button>
         <button id="btn-quit">quit to drawing</button>

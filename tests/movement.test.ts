@@ -14,7 +14,7 @@ function run(p: Player, input: Input, boxes: Box[], seconds: number, triggers: T
   const dt = 1 / 120;
   for (let t = 0; t < seconds; t += dt) {
     p.update(dt, input, boxes);
-    p.applyTriggers(triggers, dt);
+    p.applyTriggers(triggers, dt, boxes);
     input.pressed.clear();
   }
 }
@@ -29,7 +29,7 @@ describe('movement', () => {
     const dt = 1 / 120;
     for (let t = 0; t < 1.5; t += dt) {
       p.update(dt, input, [ground]);
-      p.applyTriggers([pad], dt);
+      p.applyTriggers([pad], dt, [ground]);
       peak = Math.max(peak, p.pos.y);
     }
     // v²/2g = 289/44 ≈ 6.6m.
@@ -68,5 +68,15 @@ describe('movement', () => {
     run(slider, input, boxes, 3);
     expect(slider.pos.x).toBeGreaterThan(8);
     expect(slider.height).toBeCloseTo(1.75);
+  });
+
+  it('conveyor carries a standing player along the belt', () => {
+    const belt: Box = { min: { x: -2, y: 0, z: -20 }, max: { x: 2, y: 0.35, z: 20 } };
+    const conv: Trigger = { kind: 'conveyor', box: { min: { x: -2, y: 0.3, z: -20 }, max: { x: 2, y: 0.75, z: 20 } }, vel: { x: 0, z: 6 } };
+    const p = new Player();
+    p.spawn({ x: 0, y: 0.35, z: 0 } as never);
+    run(p, fakeInput(), [ground, belt], 1, [conv]);
+    expect(p.pos.z).toBeGreaterThan(5);
+    expect(p.pos.z).toBeLessThan(7);
   });
 });

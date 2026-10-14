@@ -82,8 +82,8 @@ export class Player implements Body {
     this.event = 'launch';
   }
 
-  /** Launch pads and updrafts. Call after update(). */
-  applyTriggers(triggers: Trigger[], dt: number): void {
+  /** Launch pads, updrafts and conveyors. Call after update(). */
+  applyTriggers(triggers: Trigger[], dt: number, boxes: Box[]): void {
     const min = { x: this.pos.x - this.halfW, y: this.pos.y, z: this.pos.z - this.halfW };
     const max = { x: this.pos.x + this.halfW, y: this.pos.y + this.height, z: this.pos.z + this.halfW };
     for (const t of triggers) {
@@ -91,6 +91,8 @@ export class Player implements Body {
       if (t.kind === 'launch') {
         // Only while coming down or standing, so one touch = one bounce.
         if (this.vel.y <= 1) this.launch(t.vel);
+      } else if (t.kind === 'conveyor') {
+        if (this.grounded) moveBody(this, boxes, t.vel.x * dt, 0, t.vel.z * dt, STEP);
       } else {
         this.vel.y = Math.min(t.maxUp, this.vel.y + t.lift * dt);
         this.grounded = false;

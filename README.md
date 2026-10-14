@@ -37,6 +37,29 @@ npm run build    # type-check + production build into dist/
 - **Color mode:** a toggle on the drawing screen. The world switches to colored ink but keeps the pen outlines and hatching: grey concrete building, white ground, light-blue sky, yellow sun, a yellow-and-orange crane, and real-world colors for everything else (red brick, wooden crates, colored shipping containers). Paints are named in `src/render/palette.ts`.
 - **Share drawings:** makes a link containing your enemy and boss drawings. From the game-over screen it also includes your score, as a challenge. Links only work for friends when the game is hosted somewhere public; a localhost link only works on your own computer.
 
+## Maps
+Five maps (`src/world/maps/`, registry in `src/world/level.ts`), built from boxes with the small DSL in `src/world/builder.ts`. Every box carries both looks (ink style + color paint).
+
+| Map | Look | Parkour |
+| --- | --- | --- |
+| Construction Site | ink | the original: scaffold floors, stairs, house roof, crane |
+| Rooftops | ink | roof-to-roof loop, launch vents, air-con ducts to slide under |
+| Factory | ink | conveyor belts, steam vents up to a catwalk loop, pipe racks, silo + gantry rail |
+| Playground | color | trampolines, crawl tubes (slide through), climbing fort, monkey-bar beam |
+| Treetops | color | bounce mushrooms, rope bridges, leaf updrafts, hollow logs |
+
+Movement pieces: launch pads (`launchPad`), updrafts (`updraft`), conveyors (`conveyor`), and a 1m collision height while sliding so 1.1m gaps can be slid through. Solo picks a map in the menu (switches to its native look; the color toggle still overrides).
+
+Map vote pictures live in `public/img/maps/`. After changing a map, regenerate them: `npx vite --port 5173` then `node scripts/render-map-thumbs.mjs` (needs Playwright + ffmpeg).
+
+## Versus (multiplayer)
+- **Create a game** gives a 5-letter code and an invite link (`/play/#room=CODE`). 2–4 players. Everyone votes on a map (with top-down pictures); the round starts when all have voted or after 20s. First to 10 kills or 5 minutes, then results, then the next vote.
+- You fight as your **"you (versus)"** drawing. No slow-mo, no upgrades. Same HP and speed for everyone; health regenerates after 4s without damage; 3s respawn with 1.5s spawn protection. Sniper and eraser sword do a bit less damage than in solo.
+- **Networking, no database:** a Supabase Realtime channel (`penstrike-room-CODE`) is used only to see who's in the room and to set up direct WebRTC links. Gameplay (positions ~20/s, shots, hits, deaths) goes peer to peer. If a direct link can't be made (strict networks; no TURN server), that pair falls back to relaying through the channel at a lower rate.
+- The earliest joiner hosts the round clock and vote; if they leave the next player takes over. Hits are decided by the shooter (fine between friends, not cheat-proof), and versus results don't go to the leaderboard.
+- Code: `src/net/signal.ts` (presence + signaling), `src/net/mesh.ts` (WebRTC mesh + relay fallback), `src/net/versus.ts` (room, vote, phases, scores), `src/versusUi.ts` (screens + wiring), `src/game/remotePlayer.ts`.
+- Local testing without Supabase: open two tabs of `/play/?test&net=local&name=A` (BroadcastChannel signaling).
+
 ## How the look works
 `src/render/postfx.ts` renders the world as plain lit boxes, then a fullscreen shader turns it into ink:
 edges come from depth and normal discontinuities, crosshatching from the lighting, and the paper plus ruled lines from screen space.

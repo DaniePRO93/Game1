@@ -11,6 +11,7 @@ import { Combo } from './combo';
 import { DoodleStats, doodleStats } from './doodleStats';
 import { ENEMY_DEFS, Enemy, EnemyContext } from './enemy';
 import { FX } from './fx';
+import { RemotePlayer } from './remotePlayer';
 import type { Input } from './input';
 import { Player } from './player';
 import { Projectiles } from './projectiles';
@@ -18,7 +19,7 @@ import { TimeMeter } from './timeMeter';
 import { ViewModel } from './viewmodel';
 import { Mods, Upgrade, modsFrom, rollUpgrades } from './upgrades';
 import { EnemyKind, isBossWave, maxAlive, parTime, spawnQueue, timeBonus } from './waves';
-import { HEADSHOT_MULT, WEAPONS, WeaponState, damageAt } from './weapons';
+import { HEADSHOT_MULT, WEAPONS, WeaponId, WeaponState, damageAt } from './weapons';
 
 interface Pickup {
   kind: 'ammo' | 'health';
@@ -35,6 +36,23 @@ export interface Doodles {
   enemy: DoodleSprite;
   boss: DoodleSprite;
 }
+
+/** What the game needs from a versus room (VersusRoom implements it). */
+export interface VersusLink {
+  sendSnap(s: { p: [number, number, number]; yaw: number; sl: number; w: number; alive: number }): void;
+  sendShot(from: number[], ends: number[][], weapon: number): void;
+  sendSwing(): void;
+  sendHit(to: string, dmg: number, head: boolean, erased: boolean): void;
+  sendDied(by: string, head: boolean, erased: boolean): void;
+}
+
+/** Versus damage scaling, so one-hit weapons don't dominate. */
+const VERSUS_DAMAGE: Record<WeaponId, number> = { rifle: 1, shotgun: 1, pistol: 1, sniper: 0.8, eraser: 0.7 };
+const RESPAWN_S = 3;
+const SPAWN_SHIELD = 1.5;
+const REGEN_DELAY = 4;
+const REGEN_RATE = 25;
+const SNAP_INTERVAL = 0.05;
 
 const BASE_FOV = 75;
 const ERASER_PINK = new THREE.Color('#ee7fae');
@@ -93,6 +111,16 @@ export class Game {
   onUpgrade: (choices: Upgrade[], beatClock: boolean) => void = () => {};
   private choices: Upgrade[] = [];
   private beatClock = false;
+
+  // ── Versus ──
+  versus: VersusLink | null = null;
+  readonly remotes = new Map<string, RemotePlayer>();
+  private respawnT = 0;
+  private spawnShield = 0;
+  private sinceHurt = 0;
+  private snapT = 0;
+  /** Versus kill/death events for the HUD feed. */
+  onVersusEvent: (text: string) => void = () => {};
 
   constructor(private hud: Hud, private sfx: Sfx, private input: Input) {
     this.level = buildLevel();
@@ -214,6 +242,19 @@ export class Game {
     this.hud.hint('WASD move · SPACE jump (twice!) · C slide · hold SHIFT to slow time · 5 = eraser sword', 6);
   }
 
+  /** Straight-down view of the whole map (used to render the map vote pictures). */
+  topdown(): void {
+    const B = this.level.bounds + 2;
+    const h = 300;
+    this.camera.fov = (2 * Math.atan(B / h) * 180) / Math.PI;
+    this.camera.position.set(0, h, 0);
+    this.camera.up.set(0, 0, -1);
+    this.camera.lookAt(0, 0, 0);
+    this.camera.updateProjectionMatrix();
+    this.viewmodel.root.visible = false;
+    this.level.update(0.016);
+  }
+
   /** Spin the camera over the level behind the menu. */
   idle(realDt: number): void {
     this.idleT += realDt * 0.06;
@@ -230,6 +271,10 @@ export class Game {
 
   // ── Main update ──────────────────────────────────────────────────────
   update(realDt: number): void {
+    if (this.versus) {
+      this.updateVersus(realDt);
+      return;
+    }
     if (this.dead) {
       this.updateDeath(realDt);
       return;
@@ -249,7 +294,7 @@ export class Game {
 
     this.player.look(input, this.zoomed ? 0.35 : 1);
     this.player.update(pDt, input, this.level.boxes);
-    this.player.applyTriggers(this.level.triggers, pDt);
+    this.player.applyTriggers(this.level.triggers, pDt, this.level.boxes);
     this.level.update(realDt);
     switch (this.player.event) {
       case 'launch':
@@ -380,6 +425,8 @@ export class Game {
     if (!this.player.grounded) spread *= 1.6;
 
     const hits = new Map<Enemy, { dmg: number; head: boolean; dir: THREE.Vector3 }>();
+    const remoteHits = new Map<RemotePlayer, { dmg: number; head: boolean }>();
+    const ends: number[][] = [];
     for (let p = 0; p < def.pellets; p++) {
       const a = Math.random() * Math.PI * 2;
       const r = Math.sqrt(Math.random()) * spread;
@@ -391,9 +438,24 @@ export class Game {
         const h = e.rayHit(origin, dir);
         if (h && (!wh || h.t < wh.t) && (!best || h.t < best.t)) best = { e, t: h.t, head: h.headshot };
       }
-      const endT = best ? best.t : wh ? wh.t : 120;
+      let bestR: { r: RemotePlayer; t: number; head: boolean } | null = null;
+      if (this.versus) {
+        for (const rp of this.remotes.values()) {
+          const h = rp.rayHit(origin, dir);
+          if (h && (!wh || h.t < wh.t) && (!bestR || h.t < bestR.t)) bestR = { r: rp, t: h.t, head: h.headshot };
+        }
+      }
+      const endT = bestR ? bestR.t : best ? best.t : wh ? wh.t : 120;
       const end = origin.clone().addScaledVector(dir, endT);
-      if (best) {
+      if (bestR) {
+        const dmg = damageAt(def, bestR.t) * (bestR.head ? HEADSHOT_MULT : 1) * VERSUS_DAMAGE[def.id];
+        const prev = remoteHits.get(bestR.r);
+        if (prev) {
+          prev.dmg += dmg;
+          prev.head ||= bestR.head;
+        } else remoteHits.set(bestR.r, { dmg, head: bestR.head });
+        this.fx.spray(end, dir, bestR.r.ink, def.pellets > 1 ? 2 : 5);
+      } else if (best) {
         const mult = (best.head ? HEADSHOT_MULT + this.mods.headshot : 1) * (best.e.def.heavy ? def.heavyMult : 1) * this.mods.damage;
         const prev = hits.get(best.e);
         const dmg = damageAt(def, best.t) * mult;
@@ -406,7 +468,10 @@ export class Game {
         this.fx.splat(end, wh.box, def.id === 'sniper' ? 0.5 : 0.28);
         if (this.mods.ricochet) this.ricochet(end, def, hits);
       }
-      if (p < 4) this.fx.tracer(muzzle.clone().addScaledVector(dir, 0.15), end);
+      if (p < 4) {
+        this.fx.tracer(muzzle.clone().addScaledVector(dir, 0.15), end);
+        ends.push([+end.x.toFixed(2), +end.y.toFixed(2), +end.z.toFixed(2)]);
+      }
     }
 
     for (const [e, h] of hits) {
@@ -415,6 +480,16 @@ export class Game {
       else if (h.head) this.sfx.headshot();
       else this.sfx.hit();
       this.hud.hitmarker(h.head, killed);
+    }
+    if (this.versus) {
+      for (const [rp, h] of remoteHits) {
+        this.versus.sendHit(rp.id, Math.round(h.dmg), h.head, false);
+        rp.hitFlash();
+        if (h.head) this.sfx.headshot();
+        else this.sfx.hit();
+        this.hud.hitmarker(h.head, false);
+      }
+      this.versus.sendShot([+muzzle.x.toFixed(2), +muzzle.y.toFixed(2), +muzzle.z.toFixed(2)], ends, this.wIdx);
     }
 
     this.fx.flash(muzzle, def.id === 'shotgun' ? 0.5 : def.id === 'sniper' ? 0.55 : 0.32);
@@ -442,6 +517,29 @@ export class Game {
     if (this.mods.swatter) {
       for (const p of this.projectiles.eraseInCone(eye, fx, fz, range + 0.5, Math.cos(m.arc))) {
         this.fx.spray(p, fwd, ERASER_PINK, 3, 0.05);
+      }
+    }
+    if (this.versus) {
+      this.versus.sendSwing();
+      for (const rp of this.remotes.values()) {
+        if (!rp.alive) continue;
+        const dx = rp.pos.x - eye.x;
+        const dz = rp.pos.z - eye.z;
+        const d = Math.hypot(dx, dz);
+        if (d - 0.4 > range) continue;
+        if (eye.y < rp.pos.y - 0.5 || eye.y > rp.pos.y + rp.height + 1.5) continue;
+        const cos = d > 1e-3 ? (dx * fx + dz * fz) / d : 1;
+        if (d > 0.8 && cos < Math.cos(m.arc)) continue;
+        const to = new THREE.Vector3(rp.pos.x, Math.min(eye.y, rp.pos.y + rp.height * 0.6), rp.pos.z);
+        const dir = to.clone().sub(eye);
+        const len = dir.length();
+        dir.divideScalar(len || 1);
+        if (raycastBoxes(this.level.boxes, eye, dir, Math.max(0, len - 0.4))) continue;
+        this.fx.spray(to, dir, ERASER_PINK, 6, 0.06);
+        this.versus.sendHit(rp.id, Math.round(def.damage * VERSUS_DAMAGE.eraser), false, true);
+        rp.hitFlash();
+        this.sfx.hit();
+        this.hud.hitmarker(false, false);
       }
     }
     for (const e of [...this.enemies]) {
@@ -718,6 +816,220 @@ export class Game {
     this.fx.update(realDt * 0.3, realDt);
     this.damageFlash = 1 - k * 0.5;
     if (this.deathT >= 1.6 && this.deathT - realDt < 1.6) this.onDeath();
+  }
+
+  // ── Versus ───────────────────────────────────────────────────────────
+  /** Start (or restart) versus play on the current map. */
+  startVersus(link: VersusLink): void {
+    this.versus = link;
+    for (const e of this.enemies) this.removeEnemy(e);
+    this.enemies = [];
+    this.queue = [];
+    for (const p of this.pickups) this.removePickup(p);
+    this.pickups = [];
+    this.projectiles.clear();
+    this.fx.clear();
+    this.owned = {};
+    this.applyMods();
+    this.meter.reset();
+    this.meter.active = false;
+    this.clock.timeScale = 1;
+    this.sfx.setSlowmo(0);
+    this.combo.reset();
+    this.respawn();
+    this.hud.setVersus(true);
+  }
+
+  stopVersus(): void {
+    this.versus = null;
+    for (const id of Array.from(this.remotes.keys())) this.removeRemote(id);
+    this.dead = false;
+    this.hud.setVersus(false);
+  }
+
+  addRemote(r: RemotePlayer): void {
+    this.remotes.set(r.id, r);
+    this.overlay.add(r.mesh, r.shadow, r.tag);
+  }
+
+  removeRemote(id: string): void {
+    const r = this.remotes.get(id);
+    if (!r) return;
+    this.overlay.remove(r.mesh, r.shadow, r.tag);
+    r.dispose();
+    this.remotes.delete(id);
+  }
+
+  /** Spawn point far from everyone else. */
+  private versusSpawn(): THREE.Vector3 {
+    const others = Array.from(this.remotes.values()).filter((r) => r.alive).map((r) => r.pos);
+    const scored = this.level.versusSpawns.map((p) => ({
+      p,
+      d: others.length ? Math.min(...others.map((o) => o.distanceTo(p))) : Math.random() * 10,
+    }));
+    scored.sort((a, b) => b.d - a.d);
+    const pick = scored[Math.floor(Math.random() * Math.min(3, scored.length))];
+    return pick.p.clone();
+  }
+
+  private respawn(): void {
+    this.weapons = WEAPONS.map((d) => new WeaponState(d));
+    this.switchWeapon(0, true);
+    this.applyMods();
+    const at = this.versusSpawn();
+    this.player.spawn(at);
+    // Face the middle of the map.
+    this.player.yaw = Math.atan2(at.x - this.level.idle.center.x, at.z - this.level.idle.center.z);
+    this.dead = false;
+    this.deathT = 0;
+    this.damageFlash = 0;
+    this.zoomed = false;
+    this.spawnShield = SPAWN_SHIELD;
+    this.sinceHurt = 0;
+    this.viewmodel.root.visible = true;
+    this.camera.rotation.z = 0;
+  }
+
+  /** Someone hit me. */
+  versusHit(from: string, dmg: number, head: boolean, erased: boolean): void {
+    if (!this.versus || this.dead || this.spawnShield > 0) return;
+    this.player.hp -= dmg;
+    this.damageFlash = 1;
+    this.sinceHurt = 0;
+    this.sfx.hurt();
+    if (this.player.hp <= 0) {
+      this.dead = true;
+      this.deathT = 0;
+      this.player.hp = 0;
+      this.respawnT = RESPAWN_S;
+      this.zoomed = false;
+      this.viewmodel.root.visible = false;
+      this.versus.sendDied(from, head, erased);
+      const name = this.remotes.get(from)?.name ?? 'someone';
+      this.hud.banner(`${erased ? 'ERASED' : 'SCRIBBLED OUT'} BY ${name.toUpperCase()}`, RESPAWN_S - 0.4);
+      this.onVersusEvent(`${name} ${erased ? 'erased' : 'got'} you`);
+      this.sendSnap(true);
+    }
+  }
+
+  /** A remote player died (by me or someone else). */
+  remoteDied(victim: string, by: string, head: boolean, erased: boolean, selfId: string): void {
+    const r = this.remotes.get(victim);
+    if (r && r.alive) {
+      const dir = r.pos.clone().sub(this.player.pos).setY(0.3).normalize();
+      if (erased) this.fx.erase(r, ERASER_PINK);
+      else this.fx.shatter(r, dir.multiplyScalar(5));
+      r.kill();
+    }
+    const vName = r?.name ?? 'someone';
+    if (by === selfId) {
+      this.sfx.kill();
+      this.hud.hitmarker(head, true);
+      this.hud.hint(`you ${erased ? 'erased' : 'scribbled out'} ${vName}${head ? ' (headshot!)' : ''}`, 2);
+      this.onVersusEvent(`you ${erased ? 'erased' : 'got'} ${vName}`);
+    } else {
+      const kName = this.remotes.get(by)?.name ?? 'someone';
+      this.onVersusEvent(`${kName} ${erased ? 'erased' : 'got'} ${vName}`);
+    }
+  }
+
+  remoteShot(id: string, from: number[], ends: number[][], weapon: number): void {
+    const r = this.remotes.get(id);
+    if (!r || !Array.isArray(from) || from.length !== 3) return;
+    const o = new THREE.Vector3(from[0], from[1], from[2]);
+    for (const e of (ends ?? []).slice(0, 4)) {
+      if (Array.isArray(e) && e.length === 3) this.fx.tracer(o, new THREE.Vector3(e[0], e[1], e[2]));
+    }
+    this.fx.flash(o, weapon === 1 ? 0.5 : 0.35, false);
+    if (o.distanceTo(this.player.pos) < 60) this.sfx.enemyShot();
+  }
+
+  remoteSwing(id: string): void {
+    const r = this.remotes.get(id);
+    if (!r || !r.alive) return;
+    this.fx.spray(r.pos.clone().setY(r.pos.y + 1.2), new THREE.Vector3(0, 1, 0), ERASER_PINK, 4, 0.05);
+    if (r.pos.distanceTo(this.player.pos) < 30) this.sfx.swing();
+  }
+
+  private sendSnap(force = false): void {
+    if (!this.versus) return;
+    if (!force && this.snapT > 0) return;
+    this.snapT = SNAP_INTERVAL;
+    const p = this.player.pos;
+    this.versus.sendSnap({
+      p: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)],
+      yaw: +this.player.yaw.toFixed(2),
+      sl: this.player.sliding > 0 ? 1 : 0,
+      w: this.wIdx,
+      alive: this.dead ? 0 : 1,
+    });
+  }
+
+  private updateVersus(realDt: number): void {
+    this.clock.update(realDt, false);
+    this.snapT -= realDt;
+    this.level.update(realDt);
+    const cam = this.camera.getWorldPosition(new THREE.Vector3());
+    for (const r of this.remotes.values()) r.update(realDt, cam);
+
+    if (this.dead) {
+      this.deathT += realDt;
+      const k = Math.min(1, this.deathT / 1.2);
+      this.camera.position.y = this.player.pos.y + 1.6 - k * 1.3;
+      this.camera.rotation.z = k * 0.9;
+      this.damageFlash = 1 - k * 0.5;
+      this.fx.update(realDt, realDt);
+      this.respawnT -= realDt;
+      if (this.respawnT <= 0) this.respawn();
+      this.sendSnap();
+      this.pushHud();
+      return;
+    }
+
+    const input = this.input;
+    this.player.look(input, this.zoomed ? 0.35 : 1);
+    this.player.update(realDt, input, this.level.boxes);
+    this.player.applyTriggers(this.level.triggers, realDt, this.level.boxes);
+    switch (this.player.event) {
+      case 'launch':
+        this.sfx.airJump();
+        break;
+      case 'jump':
+        this.sfx.jump();
+        break;
+      case 'airjump':
+        this.sfx.airJump();
+        this.fx.spray(this.player.eye(new THREE.Vector3()).setY(this.player.pos.y + 0.1), new THREE.Vector3(0, 1, 0), ERASER_PINK, 4, 0.05);
+        break;
+      case 'slide':
+        this.sfx.slide();
+        break;
+      case 'land':
+        this.sfx.land();
+        break;
+    }
+    this.player.applyCamera(this.camera);
+    this.camera.updateMatrixWorld(true);
+    this.updateWeapons(realDt);
+
+    this.spawnShield = Math.max(0, this.spawnShield - realDt);
+    this.sinceHurt += realDt;
+    if (this.sinceHurt > REGEN_DELAY && this.player.hp < this.player.maxHp) {
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + REGEN_RATE * realDt);
+    }
+    this.damageFlash = Math.max(0, this.damageFlash - realDt * 1.8);
+    this.fx.update(realDt, realDt);
+
+    const speedKick = Math.max(0, Math.min(12, (this.player.speed - 7) * 1.5));
+    const fov = this.zoomed ? ZOOM_FOV : BASE_FOV + speedKick;
+    if (Math.abs(this.camera.fov - fov) > 0.01) {
+      this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-realDt * 20));
+      this.camera.updateProjectionMatrix();
+    }
+    const w = this.weapon;
+    this.viewmodel.update(realDt, this.player.grounded ? this.player.speed : 0, w.reloading > 0 ? 1 - w.reloading / w.def.reload : 0, this.zoomed);
+    this.sendSnap();
+    this.pushHud();
   }
 
   private pushHud(): void {
