@@ -412,3 +412,19 @@ button.big {
   font-size: 24px;
   margin: 0;
 }
+
+.sens {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+}
+.sens input[type='range'] {
+  flex: 1;
+  min-width: 100px;
+  accent-color: var(--red);
+}
+.sens output {
+  min-width: 48px;
+  text-align: right;
+}

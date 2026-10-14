@@ -46,6 +46,11 @@ float noise(vec2 p) {
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }
 
+vec3 hsv2rgb(vec3 c) {
+  vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+
 float linDepth(vec2 uv) {
   float d = texture2D(tDepth, uv).x;
   float z = d * 2.0 - 1.0;
@@ -105,9 +110,19 @@ void main() {
     float tone = clamp(c.b * inv, 0.0, 1.0);
     float shade = 1.0 - L;
 
-    col = mix(col, LAV, tone * 0.85);
-    col = mix(col, LAV, smoothstep(0.2, 0.8, shade) * 0.45);
-    col = mix(col, vec3(0.56, 0.57, 0.86), step(0.75, pat) * 0.65);
+    // pattern ≈ 0.25 marks "colored ink": tone is then a hue (weapons).
+    bool colored = pat > 0.15 && pat < 0.35;
+    vec3 hatchInk = INK;
+    if (colored) {
+      vec3 hc = hsv2rgb(vec3(tone, 0.62, 0.97));
+      col = mix(col, hc, 0.9);
+      hatchInk = hc * 0.42;
+      col = mix(col, hatchInk, smoothstep(0.3, 0.9, shade) * 0.25);
+    } else {
+      col = mix(col, LAV, tone * 0.85);
+      col = mix(col, LAV, smoothstep(0.2, 0.8, shade) * 0.45);
+      col = mix(col, vec3(0.56, 0.57, 0.86), step(0.75, pat) * 0.65);
+    }
 
     vec2 hp = css + jit * 3.0;
     float h = 0.0;
@@ -115,9 +130,9 @@ void main() {
     h = max(h, hatch(hp, -0.785, 6.0, 0.9) * smoothstep(0.42, 0.50, shade));
     h = max(h, hatch(hp, 0.0, 4.0, 0.9) * smoothstep(0.62, 0.70, shade));
     float diamond = max(hatch(hp, 1.05, 5.0, 0.8), hatch(hp, -1.05, 5.0, 0.8));
-    h = max(h, diamond * step(0.25, pat) * step(pat, 0.75) * 0.8);
+    h = max(h, diamond * step(0.4, pat) * step(pat, 0.6) * 0.8);
     h *= 0.55 + 0.45 * noise(hp * 0.12);
-    col = mix(col, INK, h * 0.7);
+    col = mix(col, hatchInk, h * 0.7);
   }
 
   // Faint ruled lines over everything, red margin on the left.

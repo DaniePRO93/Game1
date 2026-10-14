@@ -107,8 +107,13 @@ export class Hud {
     e.hpFill.classList.toggle('low', s.hp < 30);
     e.hpNum.textContent = `${Math.max(0, Math.ceil(s.hp))}`;
     const reserve = s.reserve === Infinity ? '∞' : `${s.reserve}`;
-    e.ammo.innerHTML = s.reloading ? `<span class="reloading">reloading…</span>` : `<b>${s.ammo}</b>/${reserve}`;
-    const pipCount = Math.min(s.mag, 30);
+    const melee = s.mag === Infinity;
+    e.ammo.innerHTML = melee
+      ? `<b>∞</b> <span class="small">swing!</span>`
+      : s.reloading
+        ? `<span class="reloading">reloading…</span>`
+        : `<b>${s.ammo}</b>/${reserve}`;
+    const pipCount = melee ? 0 : Math.min(s.mag, 30);
     const filled = Math.round((s.ammo / s.mag) * pipCount);
     let pips = '';
     for (let i = 0; i < pipCount; i++) pips += `<i class="${i < filled ? 'f' : ''}"></i>`;

@@ -60,10 +60,12 @@
               <button id="btn-example">example</button>
             </div>
             <button id="btn-start" class="big">Fight!</button>
+            <label class="sens"><span>aim sensitivity</span><input id="sens-menu" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
             <ul class="controls">
               <li><b>WASD</b> move · <b>SPACE</b> jump</li>
               <li><b>Mouse</b> aim · <b>click</b> shoot</li>
-              <li><b>1-4</b> / wheel / Q swap · <b>R</b> reload</li>
+              <li><b>1-5</b> / wheel / Q swap · <b>R</b> reload</li>
+              <li><b>5</b> eraser sword: swing to rub enemies out</li>
               <li><b>Hold SHIFT</b> slow time (5s bar)</li>
               <li>kills refill the time bar</li>
               <li><b>Right-click</b> sniper scope</li>
@@ -77,6 +79,7 @@
     <div id="pause" class="screen" style="display: none">
       <div class="sheet small-sheet">
         <h2>paused</h2>
+        <label class="sens"><span>aim sensitivity</span><input id="sens-pause" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
         <button id="btn-resume" class="big">click to resume</button>
         <button id="btn-quit">quit to drawing</button>
       </div>

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Box } from '../world/collision';
-import { doodleMaterial, splatTex, spriteMaterial, starTex } from '../render/ink';
+import { doodleMaterial, dropTex, splatTex, spriteMaterial, starTex } from '../render/ink';
 import type { Enemy } from './enemy';
 
 interface Particle {
@@ -71,6 +71,35 @@ export class FX {
     }
   }
 
+  /** Rub an enemy out top-down, shedding eraser crumbs. */
+  erase(e: Enemy, crumb: THREE.Color): void {
+    const mat = doodleMaterial(e.sprite.texture, e.def.ink);
+    const geo = e.mesh.geometry.clone();
+    const m = new THREE.Mesh(geo, mat);
+    m.position.copy(e.mesh.position);
+    m.rotation.copy(e.mesh.rotation);
+    this.add({
+      obj: m,
+      vel: new THREE.Vector3(),
+      spin: new THREE.Vector3(),
+      life: 0.55,
+      maxLife: 0.55,
+      gravity: 0,
+      fade: (k) => (mat.uniforms.reveal.value = k),
+      dispose: () => {
+        geo.dispose();
+        mat.dispose();
+      },
+      realTime: false,
+    });
+    for (let i = 0; i < 6; i++) {
+      const p = e.pos.clone();
+      p.y += e.height * (1 - i / 6);
+      const d = new THREE.Vector3(Math.random() - 0.5, -0.3, Math.random() - 0.5).normalize();
+      this.spray(p, d, crumb, 3, 0.06);
+    }
+  }
+
   /** Ink splat stuck to a wall, oriented to the face that was hit. */
   splat(p: THREE.Vector3, box: Box, size = 0.35): void {
     const n = faceNormal(p, box);
@@ -96,11 +125,11 @@ export class FX {
   }
 
   /** Little ink drops flying off a hit enemy. */
-  spray(p: THREE.Vector3, dir: THREE.Vector3, color: THREE.Color, count = 5): void {
+  spray(p: THREE.Vector3, dir: THREE.Vector3, color: THREE.Color, count = 5, size = 0.12): void {
     for (let i = 0; i < count; i++) {
-      const mat = new THREE.SpriteMaterial({ map: splatTex, color, transparent: true, depthWrite: false });
+      const mat = new THREE.SpriteMaterial({ map: dropTex, color, transparent: true, depthWrite: false });
       const s = new THREE.Sprite(mat);
-      s.scale.setScalar(0.12 + Math.random() * 0.12);
+      s.scale.setScalar(size * (1 + Math.random()));
       s.position.copy(p);
       const v = dir.clone().multiplyScalar(-2 - Math.random() * 2);
       v.x += (Math.random() - 0.5) * 4;

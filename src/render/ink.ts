@@ -52,6 +52,21 @@ export const splatTex = canvasTex(64, 64, (c) => {
   }
 });
 
+/** White droplets, tinted per use (enemy ink, eraser crumbs). */
+export const dropTex = canvasTex(64, 64, (c) => {
+  c.fillStyle = '#ffffff';
+  c.beginPath();
+  c.arc(32, 32, 14, 0, Math.PI * 2);
+  c.fill();
+  for (let i = 0; i < 5; i++) {
+    const a = rnd(0, Math.PI * 2);
+    const d = rnd(14, 24);
+    c.beginPath();
+    c.arc(32 + Math.cos(a) * d, 32 + Math.sin(a) * d, rnd(2, 5), 0, Math.PI * 2);
+    c.fill();
+  }
+});
+
 /** Scribbled oval drop-shadow placed under enemies. */
 export const shadowTex = canvasTex(128, 64, (c) => {
   c.strokeStyle = 'rgba(42,46,133,0.7)';

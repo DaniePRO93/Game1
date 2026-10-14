@@ -38,3 +38,17 @@ describe('weapons', () => {
     expect(new WeaponState(rifle).startReload()).toBe(false);
   });
 });
+
+describe('eraser sword', () => {
+  const eraser = WEAPONS.find((w) => w.id === 'eraser')!;
+  it('is melee and never consumes ammo or reloads', () => {
+    expect(eraser.melee).toBeDefined();
+    const w = new WeaponState(eraser);
+    for (let i = 0; i < 50; i++) {
+      expect(w.fire()).toBe(true);
+      w.update(eraser.interval);
+    }
+    expect(w.ammo).toBe(Infinity);
+    expect(w.startReload()).toBe(false);
+  });
+});

@@ -28,6 +28,9 @@ interface Pickup {
 type WaveState = 'intro' | 'fighting' | 'break';
 
 const BASE_FOV = 75;
+const ERASER_PINK = new THREE.Color('#ee7fae');
+/** Mouse sensitivity at 1.0x on the slider. */
+export const BASE_SENSITIVITY = 0.0022;
 const ZOOM_FOV = 22;
 
 export class Game {
@@ -115,6 +118,10 @@ export class Game {
     return this.weapons[this.wIdx];
   }
 
+  setSensitivity(mult: number): void {
+    this.player.sensitivity = BASE_SENSITIVITY * mult;
+  }
+
   setAspect(a: number): void {
     this.camera.aspect = a;
     this.camera.updateProjectionMatrix();
@@ -142,7 +149,7 @@ export class Game {
     this.zoomed = false;
     this.viewmodel.root.visible = true;
     this.nextWave();
-    this.hud.hint('WASD move · SPACE jump · hold SHIFT to slow time · 1-4 swap · R reload', 6);
+    this.hud.hint('WASD move · SPACE jump · hold SHIFT to slow time · 1-5 swap · 5 = eraser sword · R reload', 6);
   }
 
   /** Spin the camera over the level behind the menu. */
@@ -246,9 +253,10 @@ export class Game {
 
   private updateWeapons(dt: number): void {
     const input = this.input;
-    for (let i = 0; i < 4; i++) if (input.pressed.has(`Digit${i + 1}`)) this.switchWeapon(i);
-    if (input.wheel !== 0) this.switchWeapon((this.wIdx + (input.wheel > 0 ? 1 : 3)) % 4);
-    if (input.pressed.has('KeyQ')) this.switchWeapon((this.wIdx + 1) % 4);
+    const n = this.weapons.length;
+    for (let i = 0; i < n; i++) if (input.pressed.has(`Digit${i + 1}`)) this.switchWeapon(i);
+    if (input.wheel !== 0) this.switchWeapon((this.wIdx + (input.wheel > 0 ? 1 : n - 1)) % n);
+    if (input.pressed.has('KeyQ')) this.switchWeapon((this.wIdx + 1) % n);
 
     const w = this.weapon;
     const wasReloading = w.reloading > 0;
@@ -265,7 +273,8 @@ export class Game {
         else if (input.mouseClicked) this.sfx.empty();
       } else if (w.fire()) {
         this.fireBuffer = 0;
-        this.shoot();
+        if (w.def.melee) this.swing();
+        else this.shoot();
         if (w.ammo === 0 && w.startReload()) this.sfx.reload();
       }
     }
@@ -326,11 +335,49 @@ export class Game {
     this.sfx.shot(def.id);
   }
 
-  private onKill(e: Enemy, head: boolean, dir: THREE.Vector3): void {
+  /** Eraser sword: hits every enemy in a short frontal arc, lunges forward. */
+  private swing(): void {
+    const def = this.weapon.def;
+    const m = def.melee!;
+    this.viewmodel.startSwing();
+    this.sfx.swing();
+    const eye = this.camera.getWorldPosition(new THREE.Vector3());
+    const fwd = this.camera.getWorldDirection(new THREE.Vector3());
+    const fl = Math.hypot(fwd.x, fwd.z) || 1;
+    const fx = fwd.x / fl;
+    const fz = fwd.z / fl;
+    if (this.player.grounded) {
+      this.player.vel.x += fx * m.lunge;
+      this.player.vel.z += fz * m.lunge;
+    }
+    for (const e of [...this.enemies]) {
+      if (!e.ready || !e.alive) continue;
+      const dx = e.pos.x - eye.x;
+      const dz = e.pos.z - eye.z;
+      const d = Math.hypot(dx, dz);
+      if (d - e.radius > m.range) continue;
+      if (eye.y < e.pos.y - 0.5 || eye.y > e.pos.y + e.height + 1.5) continue;
+      const cos = d > 1e-3 ? (dx * fx + dz * fz) / d : 1;
+      if (d > 0.8 && cos < Math.cos(m.arc)) continue;
+      const to = new THREE.Vector3(e.pos.x, Math.min(eye.y, e.pos.y + e.height * 0.6), e.pos.z);
+      const dir = to.clone().sub(eye);
+      const len = dir.length();
+      dir.divideScalar(len || 1);
+      if (raycastBoxes(this.level.boxes, eye, dir, Math.max(0, len - e.radius))) continue;
+      this.fx.spray(to, dir, ERASER_PINK, 6, 0.06);
+      const killed = e.damage(def.damage * (e.def.heavy ? def.heavyMult : 1));
+      if (killed) this.onKill(e, false, dir, true);
+      else this.sfx.hit();
+      this.hud.hitmarker(false, killed);
+    }
+  }
+
+  private onKill(e: Enemy, head: boolean, dir: THREE.Vector3, erased = false): void {
     this.kills++;
     this.score += Math.round(e.def.score * (head ? 1.5 : 1));
     this.meter.onKill(head);
-    this.fx.shatter(e, dir.clone().multiplyScalar(e.def.kind === 'boss' ? 2 : 5));
+    if (erased) this.fx.erase(e, ERASER_PINK);
+    else this.fx.shatter(e, dir.clone().multiplyScalar(e.def.kind === 'boss' ? 2 : 5));
     this.sfx.kill();
     this.removeEnemy(e);
     this.enemies = this.enemies.filter((x) => x !== e);

@@ -91,6 +91,10 @@ export class Sfx {
     }
   }
 
+  /** Rubbery whoosh. */
+  swing(): void {
+    this.burst(0.22, 600, 1.5, 0.45, 'bandpass', 2400);
+  }
   enemyShot(): void {
     this.tone(0.12, 700, 250, 0.08, 'triangle');
   }

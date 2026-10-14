@@ -4,7 +4,8 @@ import type { Box } from './collision';
 /**
  * World materials encode style for the postfx shader:
  *   color = (1, pattern, tone)  →  R = lighting, G/R = pattern, B/R = tone.
- * pattern 0 = plain hatching, 0.5 = diamond crosshatch (brick/lattice),
+ * pattern 0 = plain hatching, 0.25 = colored ink (tone = hue),
+ * 0.5 = diamond crosshatch (brick/lattice),
  * 1 = solid lavender fill. tone = extra lavender wash.
  */
 export type Style = 'plain' | 'brick' | 'fill' | 'tone';
@@ -22,6 +23,17 @@ export function styleMaterial(style: Style): THREE.MeshLambertMaterial {
   if (!m) {
     m = new THREE.MeshLambertMaterial({ color: STYLE_COLORS[style] });
     matCache.set(style, m);
+  }
+  return m;
+}
+
+const colorCache = new Map<number, THREE.MeshLambertMaterial>();
+/** Colored ink (pattern code 0.25, hue in B). Used for weapons. */
+export function colorMaterial(hue: number): THREE.MeshLambertMaterial {
+  let m = colorCache.get(hue);
+  if (!m) {
+    m = new THREE.MeshLambertMaterial({ color: new THREE.Color(1, 0.25, hue) });
+    colorCache.set(hue, m);
   }
   return m;
 }

@@ -14,7 +14,7 @@ npm run build    # type-check + production build into dist/
 |---|---|
 | WASD / Space | move / jump |
 | Mouse / click | aim / shoot |
-| 1-4, wheel, Q | swap rifle, shotgun, pistol, sniper |
+| 1-5, wheel, Q | swap rifle, shotgun, pistol, sniper, eraser sword |
 | R | reload |
 | Hold Shift | slow time |
 | Right-click | sniper scope |
@@ -23,6 +23,8 @@ npm run build    # type-check + production build into dist/
 - **Time bar:** 5 seconds of slow-mo. It drains only while you hold Shift and refills **only from kills** (+0.75 s, +0.5 s more for a headshot).
 - **Your drawing is the enemy.** The top quarter of the drawing counts as the head (2× damage). The drawing is saved in localStorage.
 - Every 5th wave brings **The Doodler**, a giant version of your drawing. It calls in reinforcements at 66% and 33% HP.
+- **Eraser sword (5):** a melee swing that lunges you forward. It hits every enemy within about 3 m in front of you for 100 damage, enough to one-shot grunts, runners and elites. It erases them from the top down. No ammo.
+- **Aim sensitivity:** set it with the slider on the drawing screen or the pause screen (0.2×–3×). It's saved between sessions.
 - Shotgun does 1.75× damage to heavies and the boss. Killed enemies sometimes drop ammo or health crates.
 
 ## How the look works

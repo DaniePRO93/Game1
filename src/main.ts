@@ -55,6 +55,32 @@ function resize(): void {
 addEventListener('resize', resize);
 resize();
 
+// Aim sensitivity slider (menu + pause screen share one value).
+const SENS_KEY = 'doodle-fps.sens.v1';
+let sens = 1;
+try {
+  sens = Number(localStorage.getItem(SENS_KEY)) || 1;
+} catch {
+  /* storage unavailable: default 1x */
+}
+const sensInputs = Array.from(document.querySelectorAll<HTMLInputElement>('.sens-input'));
+function setSens(v: number, save: boolean): void {
+  sens = Math.min(3, Math.max(0.2, v));
+  game.setSensitivity(sens);
+  for (const el of sensInputs) {
+    el.value = String(sens);
+    el.parentElement!.querySelector('output')!.textContent = `${sens.toFixed(2)}×`;
+  }
+  if (!save) return;
+  try {
+    localStorage.setItem(SENS_KEY, String(sens));
+  } catch {
+    /* ignore */
+  }
+}
+for (const el of sensInputs) el.addEventListener('input', () => setSens(Number(el.value), true));
+setSens(sens, false);
+
 let sprite: DoodleSprite | null = null;
 
 function makeSprite(): DoodleSprite {
