@@ -52,6 +52,15 @@ export const ALL_WEAPONS: WeaponDef[] = [...WEAPONS, MINIGUN, RAILGUN];
 
 export const HEADSHOT_MULT = 2;
 
+/**
+ * Minigun barrel spin 0..1: winds up while the trigger is held, winds down
+ * twice as fast when let go. Guns without a spin-up stay at 0.
+ */
+export function spinStep(spin: number, def: WeaponDef, held: boolean, dt: number): number {
+  if (!def.spinUp) return 0;
+  return Math.max(0, Math.min(1, spin + (held ? dt / def.spinUp : -dt * 2)));
+}
+
 /** Linear falloff to 50% between falloffStart and falloffEnd. */
 export function damageAt(def: WeaponDef, distance: number): number {
   if (distance <= def.falloffStart) return def.damage;

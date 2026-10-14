@@ -41,7 +41,7 @@ import { TimeMeter } from './timeMeter';
 import { ViewModel } from './viewmodel';
 import { Mods, Upgrade, modsFrom, rollUpgrades } from './upgrades';
 import { EnemyKind, isBossWave, maxAlive, parTime, spawnQueue, timeBonus } from './waves';
-import { ALL_WEAPONS, HEADSHOT_MULT, STREAKS, WEAPONS, WeaponDef, WeaponId, WeaponState, damageAt } from './weapons';
+import { ALL_WEAPONS, HEADSHOT_MULT, STREAKS, WEAPONS, WeaponDef, WeaponId, WeaponState, damageAt, spinStep } from './weapons';
 
 interface Pickup {
   kind: 'ammo' | 'health';
@@ -577,9 +577,8 @@ export class Game {
     this.player.moveMult = (this.aiming ? 0.6 : 1) * (w.def.id === 'minigun' ? 0.8 : 1);
 
     // Minigun spins up while the trigger is held.
-    if (w.def.spinUp) this.spin = Math.max(0, Math.min(1, this.spin + (input.mouseDown ? dt / w.def.spinUp : -dt * 2)));
+    this.spin = spinStep(this.spin, w.def, input.mouseDown, dt);
     if (!input.mouseDown) this.brrrt = false;
-    else this.spin = 0;
 
     if (input.mouseClicked) this.fireBuffer = 0.15;
     else this.fireBuffer = Math.max(0, this.fireBuffer - dt);

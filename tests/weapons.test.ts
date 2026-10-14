@@ -68,3 +68,15 @@ describe('weapon balance + killstreaks', () => {
     expect(new Set(ALL_WEAPONS.map((w) => w.id)).size).toBe(ALL_WEAPONS.length);
   });
 });
+
+describe('minigun spin-up', () => {
+  it('reaches full spin while the trigger is held, then winds down when let go', async () => {
+    const { MINIGUN, spinStep } = await import('../src/game/weapons');
+    let spin = 0;
+    for (let t = 0; t < MINIGUN.spinUp! + 0.05; t += 1 / 60) spin = spinStep(spin, MINIGUN, true, 1 / 60);
+    expect(spin).toBe(1);
+    spin = spinStep(spin, MINIGUN, false, 0.1);
+    expect(spin).toBeCloseTo(0.8);
+    expect(spinStep(0.5, rifle, true, 0.1)).toBe(0);
+  });
+});
