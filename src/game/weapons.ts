@@ -33,7 +33,7 @@ export interface WeaponDef {
 
 export const WEAPONS: WeaponDef[] = [
   { id: 'rifle', name: 'RIFLE', hint: 'auto · hold to spray', auto: true, interval: 0.1, damage: 22, pellets: 1, spread: 0.014, mag: 30, reserve: 150, reload: 1.6, falloffStart: 25, falloffEnd: 60, heavyMult: 1, recoil: 0.012, paint: [0.07, 0.5, 0.14] },
-  { id: 'shotgun', name: 'SHOTGUN', hint: 'ends heavies', auto: false, interval: 0.85, damage: 14, pellets: 8, spread: 0.075, mag: 6, reserve: 36, reload: 2.0, falloffStart: 6, falloffEnd: 20, heavyMult: 1.75, recoil: 0.06, paint: [0.0, 0.13, 0.48] },
+  { id: 'shotgun', name: 'SHOTGUN', hint: 'ends heavies · aim to tighten', auto: false, interval: 0.7, damage: 18, pellets: 8, spread: 0.06, mag: 7, reserve: 42, reload: 1.8, falloffStart: 9, falloffEnd: 26, heavyMult: 1.75, recoil: 0.06, paint: [0.0, 0.13, 0.48] },
   { id: 'pistol', name: 'PISTOL', hint: 'never runs dry', auto: false, interval: 0.18, damage: 30, pellets: 1, spread: 0.008, mag: 12, reserve: Infinity, reload: 1.1, falloffStart: 20, falloffEnd: 50, heavyMult: 1, recoil: 0.025, paint: [0.33, 0.78] },
   // Body shots no longer one-shot everything; headshots (×3) and a pierce reward precision.
   { id: 'sniper', name: 'SNIPER', hint: 'aim to scope · headshots ×3 · pierces one', auto: false, interval: 1.2, damage: 95, pellets: 1, spread: 0.05, mag: 5, reserve: 25, reload: 2.4, falloffStart: 200, falloffEnd: 300, heavyMult: 1.25, recoil: 0.09, headMult: 3, pierce: 1, paint: [0.75, 0.55, 0.92] },

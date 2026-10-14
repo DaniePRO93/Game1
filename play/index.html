@@ -6,7 +6,7 @@
     <title>Pen Strike</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Patrick+Hand&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -28,6 +28,13 @@
         <div class="bar"><div id="hud-boss-fill" class="fill"></div></div>
       </div>
       <div id="hud-board"></div>
+      <div id="hud-paintwar" style="display: none">
+        <div class="pw-bar"><div id="pw-0" class="pw-fill t0"></div><div id="pw-1" class="pw-fill t1"></div></div>
+        <div class="pw-labels"><span id="pw-l0"></span><span id="pw-time"></span><span id="pw-l1"></span></div>
+      </div>
+      <div id="hud-dmg"></div>
+      <div id="hud-comic"></div>
+      <div id="hud-spectate"></div>
       <div id="hud-feed"></div>
       <div id="hud-banner"></div>
       <div id="hud-crosshair"></div>
@@ -55,25 +62,36 @@
     </div>
 
     <div id="menu" class="screen">
-      <div class="sheet">
+      <div class="sheet main-sheet">
         <div class="menu-top"><h1>Pen Strike</h1><div id="acct"></div></div>
-        <p class="sub">Draw your enemy. Then shoot it. A lot.</p>
+        <p class="sub">Draw your enemy. Then erase it.</p>
         <div id="challenge" style="display: none"></div>
+        <div class="main-btns">
+          <button id="go-solo" class="main-btn">single player<small>draw an enemy · survive the waves</small></button>
+          <button id="go-multi" class="main-btn">multiplayer<small>2-4 friends · deathmatch or paint war</small></button>
+          <button id="go-options" class="main-btn minor">options &amp; controls</button>
+        </div>
+        <a class="home-link" href="/">← pen strike home</a>
+      </div>
+    </div>
+
+    <div id="solo" class="screen" style="display: none">
+      <div class="sheet">
+        <div class="screen-top"><button class="back" data-back="menu">← menu</button><h2>single player</h2></div>
         <div class="menu-body">
           <div class="pad-col">
             <div class="tabs">
               <button class="tab active" data-sheet="enemy">enemy</button>
               <button class="tab" data-sheet="boss">boss</button>
-              <button class="tab" data-sheet="me">you (versus)</button>
             </div>
             <div id="pad"></div>
-          </div>
-          <div class="side">
             <div class="btns">
               <button id="btn-undo">undo</button>
               <button id="btn-clear">clear</button>
               <button id="btn-example">example</button>
             </div>
+          </div>
+          <div class="side">
             <div id="stat-card">
               <div class="stat-title"><span id="stat-who">your enemy</span>: <b id="stat-label">balanced doodle</b></div>
               <div class="stat"><span>HP</span><div class="bar"><div class="fill" id="stat-hp"></div></div></div>
@@ -92,37 +110,46 @@
               <div id="diff-blurb" class="diff-blurb"></div>
             </div>
             <button id="btn-start" class="big">Fight!</button>
-            <div class="versus-box">
-              <div class="title">versus <small>· 2-4 friends · first to 10</small></div>
-              <button id="btn-create">create a game</button>
-              <div class="join"><input id="vs-code-in" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false" /><button id="btn-join">join</button></div>
-              <div id="versus-msg"></div>
-            </div>
-            <div class="row">
-              <label class="toggle"><input type="checkbox" id="color-mode" /> <span>color mode</span></label>
-              <button id="btn-share">share drawings</button>
-            </div>
-            <div id="share-out" style="display: none"><input id="share-link" readonly /><span id="share-msg"></span></div>
-            <div class="publish">
-              <input id="monster-name" maxlength="40" placeholder="name this monster (optional)" />
-              <button id="btn-publish">publish to gallery</button>
-            </div>
-            <div id="publish-msg"></div>
-            <label class="sens"><span>aim sensitivity</span><input id="sens-menu" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
-            <ul class="controls">
-              <li><b>WASD</b> move · <b>SPACE</b> jump, again in the air</li>
-              <li><b>C</b> slide · jump out of a slide to keep speed</li>
-              <li><b>Mouse</b> aim · <b>click</b> shoot</li>
-              <li><b>1-5</b> / wheel / Q swap · <b>R</b> reload</li>
-              <li><b>5</b> eraser sword: swing to rub enemies out</li>
-              <li><b>Hold SHIFT</b> slow time (5s bar)</li>
-              <li>kills refill the time bar</li>
-              <li><b>Right-click</b> or <b>F</b> aim (sniper: scope)</li>
-              <li><b>3 kills</b> in a row: minigun · <b>5</b>: railgun</li>
-              <li>top quarter of your drawing = headshot</li>
-            </ul>
+            <details class="more">
+              <summary>share &amp; publish your drawings</summary>
+              <button id="btn-share">copy a share link</button>
+              <div id="share-out" style="display: none"><input id="share-link" readonly /><span id="share-msg"></span></div>
+              <div class="publish">
+                <input id="monster-name" maxlength="40" placeholder="name this monster (optional)" />
+                <button id="btn-publish">publish to gallery</button>
+              </div>
+              <div id="publish-msg"></div>
+            </details>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div id="multi" class="screen" style="display: none">
+      <div class="sheet small-sheet multi-sheet">
+        <div class="screen-top"><button class="back" data-back="menu">← menu</button><h2>multiplayer</h2></div>
+        <p class="sub">one of you creates a game and shares the code. everyone else joins with it.</p>
+        <button id="btn-create" class="big">create a game</button>
+        <div class="or">or</div>
+        <div class="join"><input id="vs-code-in" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false" /><button id="btn-join" class="big-ish">join</button></div>
+        <div id="versus-msg"></div>
+      </div>
+    </div>
+
+    <div id="options" class="screen" style="display: none">
+      <div class="sheet small-sheet options-sheet">
+        <div class="screen-top"><button class="back" data-back="menu">← menu</button><h2>options</h2></div>
+        <label class="sens"><span>aim sensitivity</span><input id="sens-menu" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
+        <label class="toggle"><input type="checkbox" id="color-mode" /> <span>color mode in single player (overrides the map's look)</span></label>
+        <ul class="controls">
+          <li><b>WASD</b> move · <b>SPACE</b> jump, again in the air</li>
+          <li><b>C</b> slide (fits under low gaps) · jump out of a slide to keep speed</li>
+          <li><b>Mouse</b> look · <b>click</b> shoot · <b>right-click</b> or <b>F</b> aim</li>
+          <li><b>1-5</b> / wheel / Q swap · <b>R</b> reload · <b>5</b> eraser sword</li>
+          <li><b>Hold SHIFT</b> slow time (single player only)</li>
+          <li><b>3 kills</b> in a row: minigun · <b>5</b>: railgun</li>
+          <li>top quarter of a drawing = headshot</li>
+        </ul>
       </div>
     </div>
 
@@ -149,11 +176,25 @@
           <div class="vs-step vs-step-maps">
             <div class="vs-step-title"><span class="num">2</span> vote for the map</div>
             <div id="vs-maps" class="vs-maps"></div>
-            <p id="vs-timer"></p>
+            <div class="vs-step-title"><span class="num">3</span> mode &amp; start</div>
+            <div id="vs-modes" class="vs-modes"></div>
+            <div class="vs-start-row">
+              <button id="vs-start" class="big">start!</button>
+              <span id="vs-start-note"></span>
+            </div>
             <div id="vs-players"></div>
           </div>
         </div>
-        <div id="vs-results" class="vs-results" style="display: none"></div>
+        <div id="vs-results" style="display: none">
+          <div id="vs-teamresult"></div>
+          <div id="vs-awards" class="vs-awards"></div>
+          <div id="vs-board" class="vs-results"></div>
+          <div class="vs-start-row">
+            <button id="vs-rematch" class="big">rematch</button>
+            <button id="vs-lobby">back to lobby</button>
+            <span id="vs-end-note"></span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -162,7 +203,7 @@
         <h2 id="pause-title">paused</h2>
         <label class="sens"><span>aim sensitivity</span><input id="sens-pause" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
         <button id="btn-resume" class="big">click to resume</button>
-        <button id="btn-quit">quit to drawing</button>
+        <button id="btn-quit">quit to menu</button>
       </div>
     </div>
 
@@ -184,6 +225,7 @@
         <button id="btn-challenge">share as a challenge</button>
         <div id="over-share" style="display: none"><input id="over-link" readonly /><span id="over-msg"></span></div>
         <button id="btn-redraw">redraw enemy</button>
+        <button id="btn-tomenu">main menu</button>
       </div>
     </div>
 

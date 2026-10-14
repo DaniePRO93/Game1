@@ -32,6 +32,8 @@ export class RemotePlayer {
   /** Shape `FX.shatter` / `FX.erase` expect. */
   readonly def: { kind: string; ink: THREE.Color };
   facing = 0;
+  /** Where they're looking (for spectating them). */
+  yaw = 0;
   width = 1;
   height = STAND_H;
   alive = false;
@@ -127,8 +129,12 @@ export class RemotePlayer {
     if (b && b.alive === a.alive) {
       const k = Math.min(1, (t - a.at) / Math.max(1, b.at - a.at));
       this.pos.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
+      let dy = b.yaw - a.yaw;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      this.yaw = a.yaw + dy * k;
     } else {
       this.pos.set(a.x, a.y, a.z);
+      this.yaw = a.yaw;
     }
     this.alive = a.alive;
     this.sliding = a.sl;

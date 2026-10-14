@@ -6,10 +6,10 @@ import { decodeShare, encodeShare, Stroke } from './game/share';
 import type { Input } from './game/input';
 import type { Hud } from './ui/hud';
 import { currentAccount, requireAccount } from './net/accountUi';
-import { KILLS_TO_WIN, Phase, VersusRoom, leader, newRoomCode, normalizeCode } from './net/versus';
+import { KILLS_TO_WIN, MODES, Phase, TEAM_COLORS, TEAM_NAMES, VersusRoom, leader, newRoomCode, normalizeCode } from './net/versus';
 import { MAPS, mapInfo } from './world/level';
 
-export type Screen = 'menu' | 'playing' | 'paused' | 'over' | 'upgrade' | 'versus';
+export type Screen = 'menu' | 'solo' | 'multi' | 'options' | 'playing' | 'paused' | 'over' | 'upgrade' | 'versus';
 
 export interface VersusCtx {
   game: Game;
@@ -29,8 +29,9 @@ export interface VersusCtx {
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /**
- * Versus flow: create/join by code → room screen (players + map vote) →
- * match → results → vote again. The room logic lives in net/versus.ts; this
+ * Versus flow: create/join by code → room (draw yourself, vote a map, host
+ * picks the mode and presses Start) → match → results with awards → rematch
+ * or back to the lobby. The room logic lives in net/versus.ts; this
  * wires it to the game and the DOM.
  */
 export function initVersus(ctx: VersusCtx) {
@@ -115,11 +116,15 @@ export function initVersus(ctx: VersusCtx) {
     history.replaceState(null, '', `${location.pathname}${location.search}`);
     if (toMenu) {
       input.unlock();
-      ctx.show('menu');
+      ctx.show('multi');
     }
   }
 
   function wire(r: VersusRoom): void {
+    r.paintSource = () => ({
+      byPlayer: game.paintGrid ? { ...game.paintGrid.byPlayer } : {},
+      teams: game.paintGrid ? game.paintGrid.coverage() : [0, 0],
+    });
     r.onChange = () => {
       if (room !== r) return;
       syncRemotes();
@@ -154,6 +159,8 @@ export function initVersus(ctx: VersusCtx) {
       ctx.setLook(info.look === 'color');
       game.startVersus(room);
       syncRemotes();
+      const team = room.teamOf(room.selfId);
+      hud.banner(team === null ? `ROUND ${room.state.round}: FIRST TO ${KILLS_TO_WIN}` : `PAINT WAR: YOU'RE TEAM ${TEAM_NAMES[team].toUpperCase()}`, 3);
       if (ctx.testMode) {
         ctx.show('playing');
         input.locked = true;
@@ -170,6 +177,13 @@ export function initVersus(ctx: VersusCtx) {
       ctx.show('versus');
     }
     render();
+    hud.paintWar(null, ['', ''], 0, null);
+  }
+
+  /** Paint War players wear their team color; otherwise their own ink. */
+  function inkOf(id: string, ink: string): string {
+    const t = room?.teamOf(id);
+    return t === null || t === undefined ? ink : TEAM_COLORS[t];
   }
 
   /** Keep the game's remote players in step with the room roster. */
@@ -179,11 +193,11 @@ export function initVersus(ctx: VersusCtx) {
       if (p.self) continue;
       let rp = game.remotes.get(p.id);
       if (!rp) {
-        rp = new RemotePlayer(p.id, p.name, p.ink, placeholderSprite());
+        rp = new RemotePlayer(p.id, p.name, inkOf(p.id, p.ink), placeholderSprite());
         game.addRemote(rp);
         rp.userToken = null;
       }
-      rp.setName(p.name, p.ink);
+      rp.setName(p.name, inkOf(p.id, p.ink));
       if (p.token && rp.userToken !== p.token) {
         const target = rp;
         target.userToken = p.token;
@@ -227,59 +241,104 @@ export function initVersus(ctx: VersusCtx) {
     return cv;
   }
 
+  for (const md of MODES) {
+    const b = document.createElement('button');
+    b.className = 'mode-btn';
+    b.dataset.mode = md.id;
+    b.innerHTML = `<span class="name"></span><small></small>`;
+    b.querySelector('.name')!.textContent = md.name;
+    b.querySelector('small')!.textContent = md.blurb;
+    b.onclick = () => room?.setMode(md.id);
+    $('vs-modes').append(b);
+  }
+
+  function playerCard(p: { id: string; name: string; token: string | null; ink: string; self: boolean }, sub: string, subClass: string): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'vs-player';
+    card.append(thumb(p.id, p.token, inkOf(p.id, p.ink)));
+    const name = document.createElement('div');
+    name.textContent = p.self ? `${p.name} (you)` : p.name;
+    name.style.color = inkOf(p.id, p.ink);
+    card.append(name);
+    const subEl = document.createElement('div');
+    subEl.className = subClass;
+    subEl.textContent = sub;
+    card.append(subEl);
+    if (!p.self && room?.mesh.isRelayed(p.id)) {
+      const slow = document.createElement('div');
+      slow.className = 'vote';
+      slow.textContent = '(slow link)';
+      card.append(slow);
+    }
+    return card;
+  }
+
   function render(): void {
     if (!room) return;
     const s = room.state;
     const players = room.sortedPlayers();
     const n = players.length;
     const ended = s.phase === 'end';
+    const host = room.players.get(room.hostId);
     $('vs-setup').style.display = ended ? 'none' : '';
     $('vs-results').style.display = ended ? '' : 'none';
 
     if (ended) {
-      const top = leader(s.scores);
-      const winner = top ? room.players.get(top.id) : null;
-      $('vs-title').textContent = winner ? (winner.self ? 'you win!' : `${winner.name} wins!`) : 'round over';
-    } else {
-      $('vs-title').textContent = 'versus';
-      const me = s.votes[room.selfId];
-      $('vs-status').textContent =
-        n < 2
-          ? 'waiting for friends… send them the code or the invite link. draw your fighter while you wait!'
-          : me
-            ? 'voted! waiting for everyone else (you can still change your drawing or vote)'
-            : 'draw your fighter, then vote for a map. the round starts when everyone has voted.';
+      if (s.mode === 'paintwar') {
+        const win = s.paint[0] === s.paint[1] ? -1 : s.paint[0] > s.paint[1] ? 0 : 1;
+        const mine = room.teamOf(room.selfId);
+        $('vs-title').textContent = win < 0 ? "it's a tie!" : win === mine ? 'your team wins!' : `team ${TEAM_NAMES[win]} wins!`;
+        const sum = Math.max(0.001, s.paint[0] + s.paint[1]);
+        $('vs-teamresult').innerHTML = `<div class="pw-bar"><div class="pw-fill t0" style="width:${(s.paint[0] / sum) * 100}%"></div><div class="pw-fill t1" style="width:${(s.paint[1] / sum) * 100}%"></div></div>
+          <div class="pw-labels"><span id="pw-r0">${TEAM_NAMES[0]} ${(s.paint[0] * 100).toFixed(1)}%</span><span id="pw-r1">${(s.paint[1] * 100).toFixed(1)}% ${TEAM_NAMES[1]}</span></div>`;
+      } else {
+        const top = leader(s.scores);
+        const winner = top ? room.players.get(top.id) : null;
+        $('vs-title').textContent = winner ? (winner.self ? 'you win!' : `${winner.name} wins!`) : 'round over';
+        $('vs-teamresult').innerHTML = '';
+      }
+      $('vs-status').textContent = `round ${s.round} · ${MODES.find((m) => m.id === s.mode)!.name} on ${mapInfo(s.map).name}`;
+
+      // Awards.
+      const aw = $('vs-awards');
+      aw.innerHTML = '';
+      for (const a of s.awards) {
+        const p = room.players.get(a.player);
+        if (!p) continue;
+        const el = document.createElement('div');
+        el.className = 'award';
+        el.style.setProperty('--rot', `${(Math.random() - 0.5) * 4}deg`);
+        el.innerHTML = '<div class="t"></div><div class="who"></div><div class="v"></div>';
+        el.querySelector('.t')!.textContent = a.title;
+        const who = el.querySelector<HTMLElement>('.who')!;
+        who.textContent = p.self ? `${p.name} (you)` : p.name;
+        who.style.color = inkOf(p.id, p.ink);
+        el.querySelector('.v')!.textContent = a.blurb;
+        aw.append(el);
+      }
+
+      const board = $('vs-board');
+      board.innerHTML = '';
+      const ranked = [...players].sort((a, b) => (s.scores[b.id] ?? 0) - (s.scores[a.id] ?? 0));
+      for (const p of ranked) board.append(playerCard(p, `${s.scores[p.id] ?? 0} kills`, 'kills'));
+
+      const isHost = room.isHost;
+      $('vs-rematch').style.display = isHost ? '' : 'none';
+      $('vs-lobby').style.display = isHost ? '' : 'none';
+      $('vs-end-note').textContent = isHost ? (n < 2 ? 'need 2+ players for a rematch' : '') : `waiting for ${host?.name ?? 'the host'} to pick: rematch or back to the lobby`;
+      return;
     }
 
-    const host = ended ? $('vs-results') : $('vs-players');
-    $('vs-players').innerHTML = '';
-    $('vs-results').innerHTML = '';
-    const ranked = ended ? [...players].sort((a, b) => (s.scores[b.id] ?? 0) - (s.scores[a.id] ?? 0)) : players;
-    for (const p of ranked) {
-      const card = document.createElement('div');
-      card.className = 'vs-player';
-      card.append(thumb(p.id, p.token, p.ink));
-      const name = document.createElement('div');
-      name.textContent = p.self ? `${p.name} (you)` : p.name;
-      name.style.color = p.ink;
-      card.append(name);
-      const sub = document.createElement('div');
-      if (ended) {
-        sub.className = 'kills';
-        sub.textContent = `${s.scores[p.id] ?? 0} kills`;
-      } else {
-        sub.className = 'vote';
-        const v = s.votes[p.id];
-        sub.textContent = v ? `✓ ${mapInfo(v).name}` : 'still choosing…';
-      }
-      card.append(sub);
-      if (!p.self && room.mesh.isRelayed(p.id)) {
-        const slow = document.createElement('div');
-        slow.className = 'vote';
-        slow.textContent = '(slow link)';
-        card.append(slow);
-      }
-      host.append(card);
+    $('vs-title').textContent = 'versus';
+    $('vs-status').textContent =
+      n < 2 ? 'waiting for friends… send them the code or the invite link. draw your fighter while you wait!' : 'draw your fighter and vote for a map.';
+
+    const list = $('vs-players');
+    list.innerHTML = '';
+    for (const p of players) {
+      const v = s.votes[p.id];
+      const tag = p.id === room.hostId ? ' · host' : '';
+      list.append(playerCard(p, (v ? `✓ ${mapInfo(v).name}` : 'still choosing…') + tag, 'vote'));
     }
 
     const counts = new Map<string, number>();
@@ -289,16 +348,25 @@ export function initVersus(ctx: VersusCtx) {
       b.querySelector('.votes')!.textContent = c ? '✓'.repeat(c) : '';
       b.classList.toggle('active', s.votes[room.selfId] === b.dataset.map);
     }
-    renderTimer();
+    for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('#vs-modes .mode-btn'))) {
+      b.classList.toggle('active', b.dataset.mode === s.mode);
+      b.disabled = !room.isHost;
+    }
+    const start = $<HTMLButtonElement>('vs-start');
+    start.style.display = room.isHost ? '' : 'none';
+    start.disabled = n < 2;
+    $('vs-start-note').textContent = room.isHost
+      ? n < 2
+        ? 'you need at least one friend to start'
+        : 'the map with the most votes is played'
+      : `${host?.name ?? 'the host'} picks the mode and starts the round`;
   }
 
-  function renderTimer(): void {
-    if (!room) return;
-    const s = room.state;
-    const sec = Math.ceil(room.timeLeft / 1000);
-    if (s.phase === 'vote') $('vs-timer').textContent = room.timeLeft > 0 ? `starting in ${sec}s, or as soon as everyone votes` : '';
-    if (s.phase === 'end') $('vs-status').textContent = `round ${s.round} on ${mapInfo(s.map).name} · next map vote in ${sec}s`;
-  }
+  $('vs-start').onclick = () => {
+    if (room?.start()) render();
+  };
+  $('vs-rematch').onclick = () => void room?.rematch();
+  $('vs-lobby').onclick = () => room?.toLobby();
 
   // ── Your fighter: the drawing pad moves into the room while you're in one ──
   const padEl = $('pad');
@@ -312,6 +380,8 @@ export function initVersus(ctx: VersusCtx) {
   }
   function padHomeAgain(): void {
     if (padEl.parentElement !== padHome) padHome.insertBefore(padEl, padNext);
+    pad.setSheet('enemy');
+    for (const t of Array.from(document.querySelectorAll<HTMLElement>('.tab'))) t.classList.toggle('active', t.dataset.sheet === 'enemy');
   }
   let tokenTimer = 0;
   const prevOnChange = pad.onChange;
@@ -381,11 +451,18 @@ export function initVersus(ctx: VersusCtx) {
       if (timerAcc < 0.2) return;
       timerAcc = 0;
       if (room.state.phase === 'play') {
-        const rows = room.sortedPlayers().map((p) => ({ name: p.name, kills: room!.state.scores[p.id] ?? 0, ink: p.ink, self: p.self }));
+        const r = room;
+        const rows = r.sortedPlayers().map((p) => ({ name: p.name, kills: r.state.scores[p.id] ?? 0, ink: inkOf(p.id, p.ink), self: p.self }));
         rows.sort((a, b) => b.kills - a.kills);
-        hud.board(rows, KILLS_TO_WIN, room.timeLeft);
-      } else if (ctx.screen() === 'versus') {
-        renderTimer();
+        if (r.state.mode === 'paintwar') {
+          // Host's numbers when we have them, my own grid in between.
+          const cover = r.isHost || !(r.state.paint[0] + r.state.paint[1]) ? (game.paintGrid?.coverage() ?? r.state.paint) : r.state.paint;
+          hud.paintWar(cover, [TEAM_NAMES[0], TEAM_NAMES[1]], r.timeLeft, r.teamOf(r.selfId));
+          hud.board(rows, 0, r.timeLeft);
+        } else {
+          hud.paintWar(null, ['', ''], 0, null);
+          hud.board(rows, KILLS_TO_WIN, r.timeLeft);
+        }
       }
     },
     /** Test hook. */

@@ -40,6 +40,7 @@ export class Projectiles {
     boxes: Box[],
     hitPlayer: (p: THREE.Vector3) => boolean,
     onImpact: (p: THREE.Vector3, box: Box) => void,
+    onPlayerHit?: (vel: THREE.Vector3) => void,
   ): number {
     let dmg = 0;
     const step = new THREE.Vector3();
@@ -59,6 +60,7 @@ export class Projectiles {
         probe.copy(s.pos).addScaledVector(step, k / n);
         if (hitPlayer(probe)) {
           dmg += s.damage;
+          onPlayerHit?.(s.vel);
           hit = true;
           break;
         }

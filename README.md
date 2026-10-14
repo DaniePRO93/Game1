@@ -39,6 +39,7 @@ npm run build    # type-check + production build into dist/
 
 ## Weapons, aiming, paint, killstreaks
 - **Aim down sights:** hold right-click or F (any gun): zoom, ~3× tighter spread, slower movement and look. The sniper aims through its scope.
+- **Shotgun:** 8 pellets × 18 damage, 0.7s between shots, 7 shells, reaches further before falling off.
 - **Sniper:** 95 body damage (no longer one-shots everything), headshots ×3, passes through one target, 1.2s between shots.
 - **Paint:** every shot splashes paint in a random color from the gun you're holding: on the wall it hits, or on the wall behind a doodle it hits. Up to 400 splats stay until the run/round ends; in versus you see others' paint too.
 - **Killstreaks:** 3 kills in a row → **minigun** (200 rounds, spins up), 5 → **railgun** (6 shots that pierce every target in line). They vanish when empty. The streak resets when you take damage (solo) or die (versus).
@@ -62,12 +63,16 @@ Movement pieces: launch pads (`launchPad`), updrafts (`updraft`), conveyors (`co
 Map vote pictures live in `public/img/maps/`. After changing a map, regenerate them: `npx vite --port 5173` then `node scripts/render-map-thumbs.mjs` (needs Playwright + ffmpeg).
 
 ## Versus (multiplayer)
-- **Create a game** gives a 5-letter code and an invite link (`/play/#room=CODE`). 2–4 players. Everyone votes on a map (with top-down pictures); the round starts when all have voted or after 20s. First to 10 kills or 5 minutes, then results, then the next vote.
-- You fight as your **"you (versus)"** drawing. No slow-mo, no upgrades. Same HP and speed for everyone; health regenerates after 4s without damage; 3s respawn with 1.5s spawn protection. Sniper and eraser sword do a bit less damage than in solo.
-- **Networking, no database:** a Supabase Realtime channel (`penstrike-room-CODE`) is used only to see who's in the room and to set up direct WebRTC links. Gameplay (positions ~20/s, shots, hits, deaths) goes peer to peer. If a direct link can't be made (strict networks; no TURN server), that pair falls back to relaying through the channel at a lower rate.
-- The earliest joiner hosts the round clock and vote; if they leave the next player takes over. Hits are decided by the shooter (fine between friends, not cheat-proof), and versus results don't go to the leaderboard.
-- Code: `src/net/signal.ts` (presence + signaling), `src/net/mesh.ts` (WebRTC mesh + relay fallback), `src/net/versus.ts` (room, vote, phases, scores), `src/versusUi.ts` (screens + wiring), `src/game/remotePlayer.ts`.
-- Local testing without Supabase: open two tabs of `/play/?test&net=local&name=A` (BroadcastChannel signaling).
+- **Menu:** main menu → Multiplayer → **create a game** (5-letter code + invite link `/play/#room=CODE`) or join with a code. 2–4 players.
+- **Room:** 1) draw your fighter (live for everyone), 2) vote for a map (top-down photos), 3) the **host** picks the mode and presses **Start**; the most-voted map is played.
+- **Modes:** *Deathmatch* (first to 10 kills or 5 min) and *Paint War* (2 teams, orange vs blue, 3 min: every shot paints in your team color and claims ground on a 1.5m grid; overpainting steals it; the team with more of the map painted wins; no friendly fire).
+- **In a match:** damage arrows show where hits come from, comic bursts ("POW!", "NICE SHOT!", "DOUBLE!", "ZZZAP!") pop by the gun, and while respawning you spectate your killer through their eyes.
+- **Results:** winner, Paint War bar, awards (MVP, Sharpshooter, Unstoppable, Picasso, Clean Sweep, Doormat), then the host picks **rematch** (same map + mode) or **back to lobby**.
+- No slow-mo, no upgrades. Same HP/speed for everyone; health regenerates after 4s; 3s respawn with 1.5s spawn protection. Sniper/eraser/killstreak guns do a bit less damage than in solo.
+- **Networking, no database:** a Supabase Realtime channel (`penstrike-room-CODE`) is used only for presence and to set up direct WebRTC links. Gameplay goes peer to peer (shots go reliable in Paint War, since they decide the score). If a direct link fails, that pair relays through the channel.
+- The earliest joiner hosts (round clock, mode, start, awards, Paint War score); if they leave the next player takes over. Hits are decided by the shooter (fine between friends, not cheat-proof); versus results don't go to the leaderboard.
+- Code: `src/net/signal.ts`, `src/net/mesh.ts`, `src/net/versus.ts` (room, modes, teams, awards), `src/versusUi.ts`, `src/game/remotePlayer.ts`, `src/game/paintGrid.ts`.
+- Local testing without Supabase: two tabs of `/play/?test&net=local&name=A`.
 
 ## How the look works
 `src/render/postfx.ts` renders the world as plain lit boxes, then a fullscreen shader turns it into ink:

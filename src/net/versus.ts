@@ -5,18 +5,27 @@ import { LocalSignal, PeerMeta, Signal, SupabaseSignal } from './signal';
 
 /**
  * A versus room: up to 4 friends who joined with the same code. The earliest
- * joiner is the host and runs the round clock: map vote → match → results →
- * vote again. Everything else (positions, hits, deaths) flows peer to peer.
+ * joiner is the host: they pick the mode and press Start (the map is the most
+ * voted one), and they run the round clock. Everything else (positions, hits,
+ * deaths) flows peer to peer.
  */
 export const MAX_PLAYERS = 4;
 export const KILLS_TO_WIN = 10;
 export const MATCH_MS = 5 * 60 * 1000;
-export const VOTE_MS = 20 * 1000;
-export const RESULTS_MS = 10 * 1000;
+export const PAINT_MS = 3 * 60 * 1000;
 /** Ink colors players are drawn in, by join order. */
 export const PLAYER_INKS = ['#c0302a', '#1f7a4a', '#d9730d', '#7a3fc0'];
+/** Paint War team colors (orange vs blue). */
+export const TEAM_COLORS = ['#ff6a00', '#1e7bff'];
+export const TEAM_NAMES = ['orange', 'blue'];
 
-export type Phase = 'vote' | 'play' | 'end';
+export type Phase = 'lobby' | 'play' | 'end';
+export type Mode = 'deathmatch' | 'paintwar';
+
+export const MODES: { id: Mode; name: string; blurb: string }[] = [
+  { id: 'deathmatch', name: 'Deathmatch', blurb: 'everyone for themselves · first to 10 kills' },
+  { id: 'paintwar', name: 'Paint War', blurb: '2 teams · 3 minutes · paint the most map' },
+];
 
 export interface RoomPlayer {
   id: string;
@@ -28,12 +37,27 @@ export interface RoomPlayer {
   self: boolean;
 }
 
+export interface Award {
+  id: string;
+  title: string;
+  blurb: string;
+  player: string;
+  value: number;
+}
+
 export interface RoomState {
   phase: Phase;
   round: number;
+  mode: Mode;
   map: MapId;
   votes: Record<string, MapId>;
+  /** Kills this round. */
   scores: Record<string, number>;
+  /** Paint War team per player (0 or 1). */
+  teams: Record<string, number>;
+  /** Paint War coverage per team, 0..1 (host's count). */
+  paint: [number, number];
+  awards: Award[];
 }
 
 /** Player state sent ~20×/s. */
@@ -43,6 +67,13 @@ export interface PlayerSnap {
   sl: number;
   w: number;
   alive: number;
+}
+
+export interface KillEvent {
+  victim: string;
+  by: string;
+  head: boolean;
+  erased: boolean;
 }
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -72,17 +103,69 @@ export function leader(scores: Record<string, number>): { id: string; kills: num
   return best;
 }
 
+/** Split players into two teams, alternating by join order. */
+export function makeTeams(ids: string[]): Record<string, number> {
+  return Object.fromEntries(ids.map((id, i) => [id, i % 2]));
+}
+
+/** Fun end-of-round awards from the kill log and paint counts. */
+export function computeAwards(events: KillEvent[], paintBy: Record<string, number>, ids: string[]): Award[] {
+  const count = (f: (e: KillEvent) => string | null) => {
+    const m = new Map<string, number>();
+    for (const e of events) {
+      const id = f(e);
+      if (id) m.set(id, (m.get(id) ?? 0) + 1);
+    }
+    return m;
+  };
+  const kills = count((e) => (e.by !== e.victim ? e.by : null));
+  const heads = count((e) => (e.head && e.by !== e.victim ? e.by : null));
+  const erases = count((e) => (e.erased && e.by !== e.victim ? e.by : null));
+  const deaths = count((e) => e.victim);
+  const streaks = new Map<string, number>();
+  const run = new Map<string, number>();
+  for (const e of events) {
+    run.set(e.victim, 0);
+    if (e.by === e.victim) continue;
+    const r = (run.get(e.by) ?? 0) + 1;
+    run.set(e.by, r);
+    streaks.set(e.by, Math.max(streaks.get(e.by) ?? 0, r));
+  }
+  const paint = new Map(Object.entries(paintBy).filter(([id]) => ids.includes(id)));
+  const top = (m: Map<string, number>, min: number): [string, number] | null => {
+    let best: [string, number] | null = null;
+    for (const [id, v] of m) if (ids.includes(id) && v >= min && (!best || v > best[1])) best = [id, v];
+    return best;
+  };
+  const out: Award[] = [];
+  const add = (id: string, title: string, blurb: (v: number) => string, t: [string, number] | null) => {
+    if (t) out.push({ id, title, blurb: blurb(t[1]), player: t[0], value: t[1] });
+  };
+  add('mvp', 'MVP', (v) => `${v} kills`, top(kills, 1));
+  add('sharpshooter', 'Sharpshooter', (v) => `${v} headshot${v === 1 ? '' : 's'}`, top(heads, 1));
+  add('streak', 'Unstoppable', (v) => `${v} kills in a row`, top(streaks, 2));
+  add('picasso', 'Picasso', (v) => `${v} spots painted`, top(paint, 1));
+  add('eraser', 'Clean Sweep', (v) => `${v} eraser kill${v === 1 ? '' : 's'}`, top(erases, 1));
+  add('doormat', 'Doormat', (v) => (v === 1 ? 'erased once' : `erased ${v} times`), top(deaths, 1));
+  return out;
+}
+
 export class VersusRoom {
   readonly code: string;
   readonly mesh: Mesh;
   private signal: Signal;
   players = new Map<string, RoomPlayer>();
-  state: RoomState = { phase: 'vote', round: 0, map: 'construction', votes: {}, scores: {} };
+  state: RoomState = { phase: 'lobby', round: 0, mode: 'deathmatch', map: 'construction', votes: {}, scores: {}, teams: {}, paint: [0, 0], awards: [] };
   /** Local time (performance.now) when the current phase's clock runs out; 0 = no clock. */
   deadline = 0;
   private hostBeat = 0;
   private lastHost = '';
   private closed = false;
+  private lastRound = 0;
+  /** Host: kill log for awards. */
+  private events: KillEvent[] = [];
+  /** Host: per-player paint counts and team coverage, supplied by the game. */
+  paintSource: () => { byPlayer: Record<string, number>; teams: [number, number] } = () => ({ byPlayer: {}, teams: [0, 0] });
 
   /** Roster, votes, scores or phase changed. */
   onChange: () => void = () => {};
@@ -139,6 +222,13 @@ export class VersusRoom {
     return this.deadline ? Math.max(0, this.deadline - performance.now()) : 0;
   }
 
+  /** Paint War team of a player, or null in deathmatch. */
+  teamOf(id: string): number | null {
+    if (this.state.mode !== 'paintwar') return null;
+    const t = this.state.teams[id];
+    return t === 0 || t === 1 ? t : null;
+  }
+
   // ── Outgoing ──────────────────────────────────────────────────────────
   /** My drawing changed: update it everywhere. */
   setToken(token: string): void {
@@ -151,11 +241,41 @@ export class VersusRoom {
   }
 
   vote(map: MapId): void {
-    if (this.state.phase !== 'vote') return;
+    if (this.state.phase !== 'lobby') return;
     this.state.votes[this.selfId] = map;
     this.mesh.broadcast({ t: 'vote', map }, true);
     this.onChange();
-    if (this.isHost) this.hostTick(true);
+    if (this.isHost) this.sendState();
+  }
+
+  /** Host only: choose the mode. */
+  setMode(mode: Mode): void {
+    if (!this.isHost || this.state.phase !== 'lobby') return;
+    this.state.mode = mode;
+    this.sendState();
+    this.onChange();
+  }
+
+  /** Host only: start a round on the most-voted map. */
+  start(): boolean {
+    if (!this.isHost || this.state.phase === 'play' || this.players.size < 2) return false;
+    this.state.map = pickMap(this.state.votes);
+    this.beginRound();
+    return true;
+  }
+
+  /** Host only: same map and mode again. */
+  rematch(): boolean {
+    if (!this.isHost || this.state.phase !== 'end' || this.players.size < 2) return false;
+    this.beginRound();
+    return true;
+  }
+
+  /** Host only: back to the lobby to vote / change mode. */
+  toLobby(): void {
+    if (!this.isHost) return;
+    this.state.votes = {};
+    this.setPhase('lobby', 0);
   }
 
   sendSnap(s: PlayerSnap): void {
@@ -163,7 +283,8 @@ export class VersusRoom {
   }
 
   sendShot(from: number[], ends: number[][], weapon: number): void {
-    this.mesh.broadcast({ t: 'f', o: from, e: ends, w: weapon }, false);
+    // Paint War coverage depends on shots, so they go on the reliable channel there.
+    this.mesh.broadcast({ t: 'f', o: from, e: ends, w: weapon }, this.state.mode === 'paintwar');
   }
 
   sendSwing(): void {
@@ -176,7 +297,7 @@ export class VersusRoom {
 
   /** I died: tell everyone who got the kill. */
   sendDied(by: string, head: boolean, erased: boolean): void {
-    this.countKill(by);
+    this.recordKill({ victim: this.selfId, by, head, erased });
     this.mesh.broadcast({ t: 'died', by, head, erased }, true);
     this.onChange();
     if (this.isHost) this.hostTick(true);
@@ -221,9 +342,10 @@ export class VersusRoom {
     if (this.isHost) this.hostTick(true);
   }
 
-  private countKill(by: string): void {
+  private recordKill(e: KillEvent): void {
     if (this.state.phase !== 'play') return;
-    this.state.scores[by] = (this.state.scores[by] ?? 0) + 1;
+    if (e.by !== e.victim) this.state.scores[e.by] = (this.state.scores[e.by] ?? 0) + 1;
+    this.events.push(e);
   }
 
   private handle(from: string, m: NetMsg): void {
@@ -236,14 +358,21 @@ export class VersusRoom {
           p.token = typeof m.token === 'string' ? m.token.slice(0, 20000) : null;
           this.onChange();
         }
-        // Late joiner: the host brings them up to speed.
-        if (this.isHost) this.sendState(from);
+        if (this.isHost) {
+          // Late joiner in Paint War: put them on the smaller team.
+          if (this.state.phase === 'play' && this.state.mode === 'paintwar' && this.state.teams[from] === undefined) {
+            const n0 = Object.values(this.state.teams).filter((t) => t === 0).length;
+            const n1 = Object.values(this.state.teams).filter((t) => t === 1).length;
+            this.state.teams[from] = n0 <= n1 ? 0 : 1;
+            this.sendState();
+          } else this.sendState(from);
+        }
         break;
       case 'vote':
-        if (this.state.phase === 'vote' && p && MAPS.some((x) => x.id === m.map)) {
+        if (this.state.phase === 'lobby' && p && MAPS.some((x) => x.id === m.map)) {
           this.state.votes[from] = m.map as MapId;
           this.onChange();
-          if (this.isHost) this.hostTick(true);
+          if (this.isHost) this.sendState();
         }
         break;
       case 'st':
@@ -262,7 +391,7 @@ export class VersusRoom {
         if (this.state.phase === 'play') this.onHit(from, Math.min(400, Number(m.dmg) || 0), !!m.head, !!m.er);
         break;
       case 'died':
-        this.countKill(String(m.by));
+        this.recordKill({ victim: from, by: String(m.by), head: !!m.head, erased: !!m.erased });
         this.onDied(from, String(m.by), !!m.head, !!m.erased);
         this.onChange();
         if (this.isHost) this.hostTick(true);
@@ -273,12 +402,17 @@ export class VersusRoom {
   private applyState(m: NetMsg): void {
     const prev = this.state.phase;
     const round = Number(m.round);
+    const paint = Array.isArray(m.paint) ? (m.paint as number[]) : [0, 0];
     this.state = {
       phase: m.phase as Phase,
       round,
+      mode: m.mode === 'paintwar' ? 'paintwar' : 'deathmatch',
       map: m.map as MapId,
       votes: (m.votes as Record<string, MapId>) ?? {},
       scores: (m.scores as Record<string, number>) ?? {},
+      teams: (m.teams as Record<string, number>) ?? {},
+      paint: [Number(paint[0]) || 0, Number(paint[1]) || 0],
+      awards: Array.isArray(m.awards) ? (m.awards as Award[]).slice(0, 8) : [],
     };
     const left = Number(m.left) || 0;
     this.deadline = left > 0 ? performance.now() + left : 0;
@@ -286,13 +420,32 @@ export class VersusRoom {
     this.lastRound = round;
     this.onChange();
   }
-  private lastRound = 0;
 
   // ── Host ──────────────────────────────────────────────────────────────
   private sendState(to?: string): void {
     const msg: NetMsg = { t: 'st', ...this.state, left: Math.round(this.timeLeft) };
     if (to) this.mesh.send(to, msg, true);
     else this.mesh.broadcast(msg, true);
+  }
+
+  private beginRound(): void {
+    const s = this.state;
+    const ids = this.sortedPlayers().map((p) => p.id);
+    s.round++;
+    s.scores = Object.fromEntries(ids.map((id) => [id, 0]));
+    s.teams = s.mode === 'paintwar' ? makeTeams(ids) : {};
+    s.paint = [0, 0];
+    s.awards = [];
+    this.events = [];
+    this.setPhase('play', s.mode === 'paintwar' ? PAINT_MS : MATCH_MS);
+  }
+
+  private endRound(): void {
+    const s = this.state;
+    const src = this.paintSource();
+    if (s.mode === 'paintwar') s.paint = src.teams;
+    s.awards = computeAwards(this.events, src.byPlayer, this.sortedPlayers().map((p) => p.id));
+    this.setPhase('end', 0);
   }
 
   private setPhase(phase: Phase, ms: number): void {
@@ -305,13 +458,13 @@ export class VersusRoom {
     this.onChange();
   }
 
-  /** Call every frame. The host advances the round; everyone else just follows. */
+  /** Call regularly. The host runs the round clock; everyone else just follows. */
   tick(): void {
     if (this.closed) return;
     if (this.hostId !== this.lastHost) {
       this.lastHost = this.hostId;
-      // Took over as host: keep the current phase but restart its clock if it had none.
-      if (this.isHost && !this.deadline && this.state.phase !== 'vote') this.deadline = performance.now() + (this.state.phase === 'play' ? MATCH_MS : RESULTS_MS);
+      // Took over as host mid-round with no clock: give the round a fresh one.
+      if (this.isHost && !this.deadline && this.state.phase === 'play') this.deadline = performance.now() + (this.state.mode === 'paintwar' ? PAINT_MS : MATCH_MS);
     }
     if (this.isHost) this.hostTick(false);
   }
@@ -320,30 +473,18 @@ export class VersusRoom {
     const n = this.players.size;
     const s = this.state;
     const now = performance.now();
-    if (s.phase === 'vote') {
+    if (s.phase === 'play') {
       if (n < 2) {
-        this.deadline = 0;
-      } else {
-        if (!this.deadline) this.deadline = now + VOTE_MS;
-        const allVoted = this.sortedPlayers().every((p) => s.votes[p.id]);
-        if (allVoted || now >= this.deadline) {
-          s.round++;
-          s.map = pickMap(s.votes);
-          s.scores = Object.fromEntries(this.sortedPlayers().map((p) => [p.id, 0]));
-          this.setPhase('play', MATCH_MS);
-          return;
-        }
-      }
-    } else if (s.phase === 'play') {
-      const top = leader(s.scores);
-      if (n < 2 || (top && top.kills >= KILLS_TO_WIN) || now >= this.deadline) {
-        this.setPhase(n < 2 ? 'vote' : 'end', n < 2 ? 0 : RESULTS_MS);
+        this.toLobby();
         return;
       }
-    } else if (s.phase === 'end' && now >= this.deadline) {
-      s.votes = {};
-      this.setPhase('vote', 0);
-      return;
+      if (s.mode === 'paintwar') s.paint = this.paintSource().teams;
+      const top = leader(s.scores);
+      const won = s.mode === 'deathmatch' && top && top.kills >= KILLS_TO_WIN;
+      if (won || now >= this.deadline) {
+        this.endRound();
+        return;
+      }
     }
     if (force || now - this.hostBeat > 1000) {
       this.hostBeat = now;

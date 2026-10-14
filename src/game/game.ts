@@ -13,6 +13,8 @@ import { DoodleStats, doodleStats } from './doodleStats';
 import { ENEMY_DEFS, Enemy, EnemyContext } from './enemy';
 import { FX } from './fx';
 import { RemotePlayer } from './remotePlayer';
+import { PaintGrid } from './paintGrid';
+import { TEAM_COLORS } from '../net/versus';
 import type { Input } from './input';
 import { Player } from './player';
 import { Projectiles } from './projectiles';
@@ -40,6 +42,9 @@ export interface Doodles {
 
 /** What the game needs from a versus room (VersusRoom implements it). */
 export interface VersusLink {
+  readonly selfId: string;
+  /** Paint War team of a player (null in deathmatch). */
+  teamOf(id: string): number | null;
   sendSnap(s: { p: [number, number, number]; yaw: number; sl: number; w: number; alive: number }): void;
   sendShot(from: number[], ends: number[][], weapon: number): void;
   sendSwing(): void;
@@ -65,6 +70,10 @@ const AIM_FOV = 55;
 /** Paint splat size per gun. */
 const PAINT_SIZE: Record<WeaponId, number> = { rifle: 0.85, shotgun: 0.55, pistol: 0.75, sniper: 1.3, eraser: 0.9, minigun: 0.65, railgun: 1.7 };
 const paintColors = new Map<number, THREE.Color>();
+const teamColors = TEAM_COLORS.map((c) => new THREE.Color(c));
+function teamColor(team: number): THREE.Color {
+  return teamColors[team] ?? teamColors[0];
+}
 function paintColor(def: WeaponDef): THREE.Color {
   const h = def.paint[Math.floor(Math.random() * def.paint.length)];
   let c = paintColors.get(h);
@@ -143,6 +152,13 @@ export class Game {
   private spawnShield = 0;
   private sinceHurt = 0;
   private snapT = 0;
+  /** Paint War coverage (null outside Paint War). */
+  paintGrid: PaintGrid | null = null;
+  private killerId = '';
+  private lastKillT = -10;
+  private killChain = 0;
+  private brrrt = false;
+  private time = 0;
   /** Versus kill/death events for the HUD feed. */
   onVersusEvent: (text: string) => void = () => {};
 
@@ -298,6 +314,7 @@ export class Game {
 
   // ── Main update ──────────────────────────────────────────────────────
   update(realDt: number): void {
+    this.time += realDt;
     if (this.versus) {
       this.updateVersus(realDt);
       return;
@@ -375,6 +392,7 @@ export class Game {
       this.level.boxes,
       (p) => this.player.contains(p),
       (p, box) => this.fx.splat(p, box, 0.45),
+      (vel) => this.hud.damageArrow(this.angleTo(this.player.pos.x - vel.x, this.player.pos.z - vel.z)),
     );
     if (dmg > 0) {
       this.player.hp -= dmg;
@@ -428,6 +446,7 @@ export class Game {
 
     // Minigun spins up while the trigger is held.
     if (w.def.spinUp) this.spin = Math.max(0, Math.min(1, this.spin + (input.mouseDown ? dt / w.def.spinUp : -dt * 2)));
+    if (!input.mouseDown) this.brrrt = false;
     else this.spin = 0;
 
     if (input.mouseClicked) this.fireBuffer = 0.15;
@@ -465,6 +484,7 @@ export class Game {
     this.switchWeapon(this.weapons.length - 1, true);
     this.viewmodel.fire(0); // no-op kick; setWeapon already played the swap
     this.hud.banner(`KILLSTREAK ×${this.streak}: ${def.name}!`, 2.2);
+    this.hud.comic('ON FIRE!', true);
     this.hud.hint(def.hint, 3);
     this.sfx.streak();
   }
@@ -478,9 +498,20 @@ export class Game {
     this.spin = 0;
   }
 
-  /** Splash paint where a shot landed. */
-  private paintAt(p: THREE.Vector3, box: Box, def: WeaponDef, scale = 1): void {
-    this.fx.paint(p, box, paintColor(def), PAINT_SIZE[def.id] * scale);
+  /**
+   * Splash paint where a shot landed. In Paint War the paint is the shooter's
+   * team color and claims ground for the team.
+   */
+  private paintAt(p: THREE.Vector3, box: Box, def: WeaponDef, scale = 1, shooter?: string): void {
+    const size = PAINT_SIZE[def.id] * scale;
+    const who = shooter ?? this.versus?.selfId ?? '';
+    const team = this.versus && this.paintGrid ? this.versus.teamOf(who) : null;
+    if (team !== null && this.paintGrid) {
+      this.fx.paint(p, box, teamColor(team), size * 1.2);
+      this.paintGrid.claim(p.x, p.z, size * 0.6, team, who);
+    } else {
+      this.fx.paint(p, box, paintColor(def), size);
+    }
   }
 
   /** A hit on a doodle splatters paint on whatever is right behind it. */
@@ -488,6 +519,37 @@ export class Game {
     const start = from.clone().addScaledVector(dir, 0.3);
     const hit = raycastBoxes(this.level.boxes, start, dir, 6);
     if (hit) this.paintAt(start.addScaledVector(dir, hit.t), hit.box, def, 0.8);
+  }
+
+  /** Is this remote player on my Paint War team? (no friendly fire) */
+  private teammate(id: string): boolean {
+    if (!this.versus) return false;
+    const mine = this.versus.teamOf(this.versus.selfId);
+    return mine !== null && this.versus.teamOf(id) === mine;
+  }
+
+  /** Angle of a world point relative to where I'm looking (0 = ahead, + = right). */
+  private angleTo(x: number, z: number): number {
+    const dx = x - this.player.pos.x;
+    const dz = z - this.player.pos.z;
+    const yaw = this.player.yaw;
+    const fwd = dx * -Math.sin(yaw) + dz * -Math.cos(yaw);
+    const right = dx * Math.cos(yaw) + dz * -Math.sin(yaw);
+    return Math.atan2(right, fwd);
+  }
+
+  /** Comic burst for a kill. */
+  private comicKill(head: boolean, erased: boolean): void {
+    const chain = this.time - this.lastKillT < 1.3 ? this.killChain + 1 : 1;
+    this.killChain = chain;
+    this.lastKillT = this.time;
+    const pick = (a: string[]) => a[Math.floor(Math.random() * a.length)];
+    if (chain === 2) this.hud.comic('DOUBLE!', true);
+    else if (chain >= 3) this.hud.comic(chain === 3 ? 'TRIPLE!' : 'RAMPAGE!', true);
+    else if (head) this.hud.comic(pick(['NICE SHOT!', 'HEADSHOT!', 'BULLSEYE!']));
+    else if (erased) this.hud.comic(pick(['ERASED!', 'SCRUB!', 'SWOOSH!']));
+    else if (this.weapon.def.id === 'shotgun') this.hud.comic(pick(['KA-BLAM!', 'BLAM!']));
+    else this.hud.comic(pick(['POW!', 'BOOM!', 'WHAM!', 'SPLAT!', 'KAPOW!']));
   }
 
   private shoot(): void {
@@ -521,6 +583,7 @@ export class Game {
       }
       if (this.versus) {
         for (const rp of this.remotes.values()) {
+          if (this.teammate(rp.id)) continue;
           const h = rp.rayHit(origin, dir);
           if (h && h.t < wallT) cands.push({ t: h.t, head: h.headshot, r: rp });
         }
@@ -582,6 +645,11 @@ export class Game {
       this.versus.sendShot([+muzzle.x.toFixed(2), +muzzle.y.toFixed(2), +muzzle.z.toFixed(2)], ends, wi);
     }
 
+    if (def.id === 'railgun') this.hud.comic('ZZZAP!', true);
+    if (def.id === 'minigun' && !this.brrrt) {
+      this.brrrt = true;
+      this.hud.comic('BRRRT!');
+    }
     this.fx.flash(muzzle, def.id === 'shotgun' ? 0.5 : def.id === 'sniper' ? 0.55 : 0.32);
     this.viewmodel.fire(def.recoil * 12);
     this.player.recoil = Math.min(0.2, this.player.recoil + def.recoil);
@@ -612,7 +680,7 @@ export class Game {
     if (this.versus) {
       this.versus.sendSwing();
       for (const rp of this.remotes.values()) {
-        if (!rp.alive) continue;
+        if (!rp.alive || this.teammate(rp.id)) continue;
         const dx = rp.pos.x - eye.x;
         const dz = rp.pos.z - eye.z;
         const d = Math.hypot(dx, dz);
@@ -656,6 +724,7 @@ export class Game {
 
   private onKill(e: Enemy, head: boolean, dir: THREE.Vector3, erased = false): void {
     this.kills++;
+    this.comicKill(head, erased);
     this.addStreakKill();
     const prevMult = this.combo.mult;
     const mult = this.combo.onKill(erased || this.clock.slowAmount > 0.5);
@@ -930,12 +999,14 @@ export class Game {
     this.clock.timeScale = 1;
     this.sfx.setSlowmo(0);
     this.combo.reset();
+    this.paintGrid = link.teamOf(link.selfId) !== null ? new PaintGrid(this.level.bounds) : null;
     this.respawn();
     this.hud.setVersus(true);
   }
 
   stopVersus(): void {
     this.versus = null;
+    this.paintGrid = null;
     for (const id of Array.from(this.remotes.keys())) this.removeRemote(id);
     this.dead = false;
     this.hud.setVersus(false);
@@ -983,6 +1054,7 @@ export class Game {
     this.sinceHurt = 0;
     this.viewmodel.root.visible = true;
     this.camera.rotation.z = 0;
+    this.hud.spectating(null);
   }
 
   /** Someone hit me. */
@@ -991,6 +1063,9 @@ export class Game {
     this.player.hp -= dmg;
     this.damageFlash = 1;
     this.sinceHurt = 0;
+    const src = this.remotes.get(from);
+    if (src) this.hud.damageArrow(this.angleTo(src.pos.x, src.pos.z));
+    this.hud.comic(Math.random() < 0.5 ? 'OUCH!' : 'OOF!');
     this.sfx.hurt();
     if (this.player.hp <= 0) {
       this.dead = true;
@@ -1001,6 +1076,7 @@ export class Game {
       this.aiming = false;
       this.streak = 0;
       this.viewmodel.root.visible = false;
+      this.killerId = from;
       this.versus.sendDied(from, head, erased);
       const name = this.remotes.get(from)?.name ?? 'someone';
       this.hud.banner(`${erased ? 'ERASED' : 'SCRIBBLED OUT'} BY ${name.toUpperCase()}`, RESPAWN_S - 0.4);
@@ -1020,6 +1096,7 @@ export class Game {
     }
     const vName = r?.name ?? 'someone';
     if (by === selfId) {
+      this.comicKill(head, erased);
       this.addStreakKill();
       this.sfx.kill();
       this.hud.hitmarker(head, true);
@@ -1047,7 +1124,7 @@ export class Game {
       if (len < 0.01) continue;
       dir.divideScalar(len);
       const hit = raycastBoxes(this.level.boxes, o, dir, len + 0.3);
-      if (hit) this.paintAt(o.clone().addScaledVector(dir, hit.t), hit.box, def);
+      if (hit) this.paintAt(o.clone().addScaledVector(dir, hit.t), hit.box, def, 1, id);
     }
     this.fx.flash(o, weapon === 1 ? 0.5 : 0.35, false);
     if (o.distanceTo(this.player.pos) < 60) this.sfx.enemyShot();
@@ -1084,9 +1161,19 @@ export class Game {
     if (this.dead) {
       this.deathT += realDt;
       const k = Math.min(1, this.deathT / 1.2);
-      this.camera.position.y = this.player.pos.y + 1.6 - k * 1.3;
-      this.camera.rotation.z = k * 0.9;
-      this.damageFlash = 1 - k * 0.5;
+      const killer = this.remotes.get(this.killerId);
+      if (this.deathT > 0.9 && killer && killer.alive) {
+        // Spectate whoever got me, through their eyes.
+        this.camera.position.set(killer.pos.x, killer.pos.y + (killer.sliding ? 1.0 : 1.6), killer.pos.z);
+        this.camera.rotation.set(0, killer.yaw, 0, 'YXZ');
+        killer.mesh.visible = killer.shadow.visible = killer.tag.visible = false;
+        this.hud.spectating(killer.name);
+        this.damageFlash = 0.15;
+      } else {
+        this.camera.position.y = this.player.pos.y + 1.6 - k * 1.3;
+        this.camera.rotation.z = k * 0.9;
+        this.damageFlash = 1 - k * 0.5;
+      }
       this.fx.update(realDt, realDt);
       this.respawnT -= realDt;
       if (this.respawnT <= 0) this.respawn();

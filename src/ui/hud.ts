@@ -51,6 +51,10 @@ export class Hud {
     comboFill: $('hud-combo-fill'),
     clock: $('hud-clock'),
     board: $('hud-board'),
+    dmg: $('hud-dmg'),
+    comic: $('hud-comic'),
+    spectate: $('hud-spectate'),
+    paintwar: $('hud-paintwar'),
     feed: $('hud-feed'),
   };
   private last = '';
@@ -70,6 +74,8 @@ export class Hud {
     if (!on) {
       this.el.board.innerHTML = '';
       this.el.feed.innerHTML = '';
+      this.el.paintwar.style.display = 'none';
+      this.spectating(null);
     }
   }
 
@@ -78,7 +84,7 @@ export class Hud {
     const t = Math.ceil(timeLeft / 1000);
     const clock = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
     const html =
-      `<div class="goal">first to ${goal} · ${clock}</div>` +
+      `<div class="goal">${goal > 0 ? `first to ${goal} · ${clock}` : 'kills'}</div>` +
       rows
         .map((r) => `<div class="row${r.self ? ' self' : ''}"><span class="dot" style="background:${r.ink}"></span><span class="n"></span><b>${r.kills}</b></div>`)
         .join('');
@@ -89,6 +95,52 @@ export class Hud {
     rows.forEach((r, i) => (names[i].textContent = r.self ? `${r.name} (you)` : r.name));
   }
   private lastBoard = '';
+
+  /** Red arrow around the crosshair pointing where damage came from (radians, 0 = straight ahead, + = to the right). */
+  damageArrow(angle: number): void {
+    const el = document.createElement('div');
+    el.className = 'dmg-arrow';
+    el.style.transform = `translate(-50%, -50%) rotate(${angle}rad) translateY(-120px)`;
+    this.el.dmg.append(el);
+    while (this.el.dmg.children.length > 4) this.el.dmg.firstElementChild!.remove();
+    setTimeout(() => el.remove(), 1100);
+  }
+
+  /** Comic-book burst ("POW!") popping out near the gun. */
+  comic(text: string, big = false): void {
+    const el = document.createElement('div');
+    el.className = `comic${big ? ' big' : ''}`;
+    el.textContent = text;
+    const colors = ['#ffe14d', '#ff8fc8', '#7fe0ff', '#b6ff7a', '#ffb347'];
+    el.style.setProperty('--bg', colors[Math.floor(Math.random() * colors.length)]);
+    el.style.setProperty('--rot', `${(Math.random() - 0.5) * 18}deg`);
+    // Around the gun (bottom right), not over the crosshair.
+    el.style.right = `${8 + Math.random() * 16}%`;
+    el.style.bottom = `${20 + Math.random() * 14}%`;
+    this.el.comic.append(el);
+    while (this.el.comic.children.length > 3) this.el.comic.firstElementChild!.remove();
+    setTimeout(() => el.remove(), 1200);
+  }
+
+  spectating(name: string | null): void {
+    this.el.spectate.textContent = name ? `spectating ${name}` : '';
+    this.el.spectate.style.display = name ? '' : 'none';
+  }
+
+  /** Paint War team bar (coverage 0..1 per team). */
+  paintWar(cover: [number, number] | null, names: [string, string], timeLeft: number, myTeam: number | null): void {
+    this.el.paintwar.style.display = cover ? '' : 'none';
+    if (!cover) return;
+    const pct = (v: number) => `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`;
+    const sum = Math.max(0.001, cover[0] + cover[1]);
+    // Bar shows the share of painted ground each team holds.
+    $('pw-0').style.width = `${(cover[0] / sum) * 100}%`;
+    $('pw-1').style.width = `${(cover[1] / sum) * 100}%`;
+    $('pw-l0').textContent = `${names[0]}${myTeam === 0 ? ' (you)' : ''} ${pct(cover[0])}`;
+    $('pw-l1').textContent = `${pct(cover[1])} ${names[1]}${myTeam === 1 ? ' (you)' : ''}`;
+    const t = Math.ceil(timeLeft / 1000);
+    $('pw-time').textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  }
 
   /** Kill feed line (fades after a few seconds). */
   feed(text: string): void {

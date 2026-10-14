@@ -89,7 +89,8 @@ const unitBox = new THREE.BoxGeometry(1, 1, 1);
 const unitCyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 14);
 
 /** Arrow decal for launch pads (ink on transparent). */
-const arrowTex = (() => {
+let arrowCache: THREE.CanvasTexture | null = null;
+const arrowTex = () => (arrowCache ??= (() => {
   const cv = document.createElement('canvas');
   cv.width = cv.height = 128;
   const c = cv.getContext('2d')!;
@@ -107,10 +108,11 @@ const arrowTex = (() => {
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.NoColorSpace;
   return t;
-})();
+})());
 
 /** Swirl decal for updrafts. */
-const swirlTex = (() => {
+let swirlCache: THREE.CanvasTexture | null = null;
+const swirlTex = () => (swirlCache ??= (() => {
   const cv = document.createElement('canvas');
   cv.width = cv.height = 128;
   const c = cv.getContext('2d')!;
@@ -130,7 +132,7 @@ const swirlTex = (() => {
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.NoColorSpace;
   return t;
-})();
+})());
 
 export interface BuildOpts {
   id: MapId;
@@ -206,7 +208,7 @@ export function createBuilder(o: BuildOpts) {
     box(x, y, z, sx, 0.25, sz, style);
     const top = y + 0.25;
     triggers.push({ kind: 'launch', box: { min: { x: x - sx / 2, y: top - 0.05, z: z - sz / 2 }, max: { x: x + sx / 2, y: top + 0.35, z: z + sz / 2 } }, vel });
-    const arrow = new THREE.Sprite(new THREE.SpriteMaterial({ map: arrowTex, transparent: true, depthWrite: false }));
+    const arrow = new THREE.Sprite(new THREE.SpriteMaterial({ map: arrowTex(), transparent: true, depthWrite: false }));
     const s = Math.min(sx, sz) * 0.8;
     arrow.scale.set(s, s, 1);
     arrow.position.set(x, top + 0.6 + s / 2, z);
@@ -222,7 +224,7 @@ export function createBuilder(o: BuildOpts) {
     triggers.push({ kind: 'updraft', box: { min: { x: x - r, y: y0, z: z - r }, max: { x: x + r, y: y1, z: z + r } }, lift, maxUp });
     const n = Math.max(3, Math.round((y1 - y0) / 2.5));
     for (let i = 0; i < n; i++) {
-      const sw = new THREE.Sprite(new THREE.SpriteMaterial({ map: swirlTex, transparent: true, depthWrite: false, opacity: 0.7 }));
+      const sw = new THREE.Sprite(new THREE.SpriteMaterial({ map: swirlTex(), transparent: true, depthWrite: false, opacity: 0.7 }));
       sw.scale.set(r * 1.6, r * 0.9, 1);
       decor.add(sw);
       const off = i / n;
@@ -250,7 +252,7 @@ export function createBuilder(o: BuildOpts) {
     const len = alongX ? x1 - x0 : z1 - z0;
     const wid = alongX ? z1 - z0 : x1 - x0;
     const n = Math.max(2, Math.floor(len / 3));
-    const mat = new THREE.MeshBasicMaterial({ map: arrowTex, transparent: true, depthWrite: false, opacity: 0.8 });
+    const mat = new THREE.MeshBasicMaterial({ map: arrowTex(), transparent: true, depthWrite: false, opacity: 0.8 });
     // Arrow texture points "up" (+v); lay it flat and turn it to face the belt direction.
     const yaw = alongX ? (speed > 0 ? -Math.PI / 2 : Math.PI / 2) : speed > 0 ? Math.PI : 0;
     for (let i = 0; i < n; i++) {

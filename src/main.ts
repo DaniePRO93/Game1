@@ -37,8 +37,11 @@ const input = new Input(canvas);
 const game = new Game(hud, sfx, input);
 const pad = new DrawPad(document.getElementById('pad')!);
 
-const screens = {
+const screens: Partial<Record<Screen, HTMLElement>> = {
   menu: document.getElementById('menu')!,
+  solo: document.getElementById('solo')!,
+  multi: document.getElementById('multi')!,
+  options: document.getElementById('options')!,
   paused: document.getElementById('pause')!,
   over: document.getElementById('over')!,
   upgrade: document.getElementById('upgrade')!,
@@ -48,11 +51,7 @@ let screen: Screen = 'menu';
 
 function show(s: Screen): void {
   screen = s;
-  screens.menu.style.display = s === 'menu' ? '' : 'none';
-  screens.paused.style.display = s === 'paused' ? '' : 'none';
-  screens.over.style.display = s === 'over' ? '' : 'none';
-  screens.upgrade.style.display = s === 'upgrade' ? '' : 'none';
-  screens.versus.style.display = s === 'versus' ? '' : 'none';
+  for (const [k, el] of Object.entries(screens)) el!.style.display = k === s ? '' : 'none';
   hud.show(s === 'playing' || s === 'paused' || s === 'upgrade');
 }
 
@@ -339,7 +338,12 @@ $('btn-clear').onclick = () => pad.clear();
 $('btn-example').onclick = () => pad.example();
 $('btn-start').onclick = () => startGame(true);
 $('btn-again').onclick = () => startGame(false);
-$('btn-redraw').onclick = () => show('menu');
+$('btn-redraw').onclick = () => show('solo');
+$('btn-tomenu').onclick = () => show('menu');
+$('go-solo').onclick = () => show('solo');
+$('go-multi').onclick = () => show('multi');
+$('go-options').onclick = () => show('options');
+for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-back]'))) b.onclick = () => show(b.dataset.back as Screen);
 $('btn-resume').onclick = () => input.lock();
 $('btn-quit').onclick = () => {
   if (versus.active) versus.leave();
@@ -454,7 +458,7 @@ if (testMode) {
     __topdown: (id: MapId) => {
       pickSoloMap(id, true);
       topdownMap = id;
-      for (const el of Object.values(screens)) el.style.display = 'none';
+      for (const el of Object.values(screens)) el!.style.display = 'none';
       hud.show(false);
     },
   });
@@ -480,10 +484,10 @@ function frame(now: number): void {
     }
     game.update(realDt);
   } else if (screen === 'playing') game.update(realDt);
-  else if (screen === 'menu' || screen === 'versus') game.idle(realDt);
+  else if (['menu', 'solo', 'multi', 'options', 'versus'].includes(screen)) game.idle(realDt);
   hud.tick(realDt);
   input.endFrame();
-  postfx.render(game.world, game.overlay, game.camera, realDt, screen === 'menu' ? { slowmo: 0, damage: 0 } : game.postParams);
+  postfx.render(game.world, game.overlay, game.camera, realDt, ['playing', 'paused', 'upgrade', 'over'].includes(screen) ? game.postParams : { slowmo: 0, damage: 0 });
   requestAnimationFrame(frame);
 }
 show('menu');
