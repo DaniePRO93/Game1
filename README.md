@@ -42,7 +42,7 @@ Five maps (`src/world/maps/`, registry in `src/world/level.ts`), built from boxe
 
 | Map | Look | Parkour |
 | --- | --- | --- |
-| Construction Site | ink | the original: scaffold floors, stairs, house roof, crane |
+| Construction Site | color | the original: scaffold floors, stairs, house roof, crane |
 | Rooftops | ink | roof-to-roof loop, launch vents, air-con ducts to slide under |
 | Factory | ink | conveyor belts, steam vents up to a catwalk loop, pipe racks, silo + gantry rail |
 | Playground | color | trampolines, crawl tubes (slide through), climbing fort, monkey-bar beam |

@@ -126,18 +126,28 @@
           <h2 id="vs-title">versus</h2>
           <div class="vs-code">code <b id="vs-code"></b></div>
           <button id="vs-copy">copy invite link</button>
+          <button id="vs-leave" class="vs-leave">leave</button>
         </div>
         <p id="vs-status"></p>
-        <div id="vs-players"></div>
-        <div id="vs-vote">
-          <div class="map-label">vote for the map</div>
-          <div id="vs-maps" class="map-list"></div>
+        <div id="vs-setup" class="vs-setup">
+          <div class="vs-step">
+            <div class="vs-step-title"><span class="num">1</span> draw your fighter</div>
+            <div id="vs-pad-host"></div>
+            <div class="btns">
+              <button id="vs-undo">undo</button>
+              <button id="vs-clear">clear</button>
+              <button id="vs-example">example</button>
+            </div>
+            <div class="vs-hint">top quarter = your head (headshots). friends see changes live.</div>
+          </div>
+          <div class="vs-step vs-step-maps">
+            <div class="vs-step-title"><span class="num">2</span> vote for the map</div>
+            <div id="vs-maps" class="vs-maps"></div>
+            <p id="vs-timer"></p>
+            <div id="vs-players"></div>
+          </div>
         </div>
-        <p id="vs-timer"></p>
-        <div class="vs-foot">
-          <button id="vs-leave">leave</button>
-          <span class="sub small">your fighter is your "you (versus)" drawing</span>
-        </div>
+        <div id="vs-results" class="vs-results" style="display: none"></div>
       </div>
     </div>
 

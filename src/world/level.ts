@@ -19,7 +19,7 @@ export interface MapInfo {
 }
 
 export const MAPS: MapInfo[] = [
-  { id: 'construction', name: 'Construction Site', look: 'ink', blurb: 'the original: scaffold floors, a rooftop and a crane', build: buildConstruction },
+  { id: 'construction', name: 'Construction Site', look: 'color', blurb: 'the original: scaffold floors, a rooftop and a crane', build: buildConstruction },
   { id: 'rooftops', name: 'Rooftops', look: 'ink', blurb: 'roof gaps, launch vents and slide-under ducts', build: buildRooftops },
   { id: 'factory', name: 'Factory', look: 'ink', blurb: 'conveyor belts, steam vents and a catwalk loop', build: buildFactory },
   { id: 'playground', name: 'Playground', look: 'color', blurb: 'trampolines, tube tunnels and a climbing fort', build: buildPlayground },

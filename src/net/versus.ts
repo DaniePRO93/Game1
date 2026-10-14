@@ -140,6 +140,16 @@ export class VersusRoom {
   }
 
   // ── Outgoing ──────────────────────────────────────────────────────────
+  /** My drawing changed: update it everywhere. */
+  setToken(token: string): void {
+    if (token === this.selfToken) return;
+    this.selfToken = token;
+    const me = this.players.get(this.selfId);
+    if (me) me.token = token;
+    this.mesh.broadcast({ t: 'hello', name: this.selfName, token }, true);
+    this.onChange();
+  }
+
   vote(map: MapId): void {
     if (this.state.phase !== 'vote') return;
     this.state.votes[this.selfId] = map;

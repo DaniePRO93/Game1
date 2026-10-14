@@ -90,6 +90,7 @@ export function initVersus(ctx: VersusCtx) {
       history.replaceState(null, '', `${location.pathname}${location.search}#room=${code}`);
       $('vs-code').textContent = code;
       $('vs-status').textContent = 'connecting…';
+      padIntoRoom();
       ctx.show('versus');
       render();
       try {
@@ -110,6 +111,7 @@ export function initVersus(ctx: VersusCtx) {
     game.stopVersus();
     ctx.restoreSolo();
     hud.setVersus(false);
+    padHomeAgain();
     history.replaceState(null, '', `${location.pathname}${location.search}`);
     if (toMenu) {
       input.unlock();
@@ -230,23 +232,30 @@ export function initVersus(ctx: VersusCtx) {
     const s = room.state;
     const players = room.sortedPlayers();
     const n = players.length;
-    const voting = s.phase === 'vote';
-    $('vs-vote').style.display = voting ? '' : 'none';
+    const ended = s.phase === 'end';
+    $('vs-setup').style.display = ended ? 'none' : '';
+    $('vs-results').style.display = ended ? '' : 'none';
 
-    if (s.phase === 'end') {
+    if (ended) {
       const top = leader(s.scores);
       const winner = top ? room.players.get(top.id) : null;
       $('vs-title').textContent = winner ? (winner.self ? 'you win!' : `${winner.name} wins!`) : 'round over';
-      $('vs-status').textContent = `round ${s.round} on ${mapInfo(s.map).name}`;
     } else {
       $('vs-title').textContent = 'versus';
+      const me = s.votes[room.selfId];
       $('vs-status').textContent =
-        n < 2 ? 'waiting for friends… send them the code or the invite link' : 'vote for a map. the round starts when everyone has voted.';
+        n < 2
+          ? 'waiting for friends… send them the code or the invite link. draw your fighter while you wait!'
+          : me
+            ? 'voted! waiting for everyone else (you can still change your drawing or vote)'
+            : 'draw your fighter, then vote for a map. the round starts when everyone has voted.';
     }
 
-    const host = $('vs-players');
-    host.innerHTML = '';
-    for (const p of players) {
+    const host = ended ? $('vs-results') : $('vs-players');
+    $('vs-players').innerHTML = '';
+    $('vs-results').innerHTML = '';
+    const ranked = ended ? [...players].sort((a, b) => (s.scores[b.id] ?? 0) - (s.scores[a.id] ?? 0)) : players;
+    for (const p of ranked) {
       const card = document.createElement('div');
       card.className = 'vs-player';
       card.append(thumb(p.id, p.token, p.ink));
@@ -255,13 +264,13 @@ export function initVersus(ctx: VersusCtx) {
       name.style.color = p.ink;
       card.append(name);
       const sub = document.createElement('div');
-      if (s.phase === 'end') {
+      if (ended) {
         sub.className = 'kills';
         sub.textContent = `${s.scores[p.id] ?? 0} kills`;
       } else {
         sub.className = 'vote';
         const v = s.votes[p.id];
-        sub.textContent = v ? `voted ${mapInfo(v).name}` : 'not voted yet';
+        sub.textContent = v ? `✓ ${mapInfo(v).name}` : 'still choosing…';
       }
       card.append(sub);
       if (!p.self && room.mesh.isRelayed(p.id)) {
@@ -287,11 +296,38 @@ export function initVersus(ctx: VersusCtx) {
     if (!room) return;
     const s = room.state;
     const sec = Math.ceil(room.timeLeft / 1000);
-    let t = '';
-    if (s.phase === 'vote' && room.timeLeft > 0) t = `starting in ${sec}s, or as soon as everyone votes`;
-    if (s.phase === 'end') t = `next map vote in ${sec}s`;
-    $('vs-timer').textContent = t;
+    if (s.phase === 'vote') $('vs-timer').textContent = room.timeLeft > 0 ? `starting in ${sec}s, or as soon as everyone votes` : '';
+    if (s.phase === 'end') $('vs-status').textContent = `round ${s.round} on ${mapInfo(s.map).name} · next map vote in ${sec}s`;
   }
+
+  // ── Your fighter: the drawing pad moves into the room while you're in one ──
+  const padEl = $('pad');
+  const padHome = padEl.parentElement!;
+  const padNext = padEl.nextSibling;
+  function padIntoRoom(): void {
+    $('vs-pad-host').append(padEl);
+    pad.setSheet('me');
+    for (const t of Array.from(document.querySelectorAll<HTMLElement>('.tab'))) t.classList.toggle('active', t.dataset.sheet === 'me');
+    pad.ensure('me');
+  }
+  function padHomeAgain(): void {
+    if (padEl.parentElement !== padHome) padHome.insertBefore(padEl, padNext);
+  }
+  let tokenTimer = 0;
+  const prevOnChange = pad.onChange;
+  pad.onChange = () => {
+    prevOnChange();
+    if (!room || pad.sheet !== 'me') return;
+    clearTimeout(tokenTimer);
+    const r = room;
+    tokenTimer = window.setTimeout(async () => {
+      if (room !== r || pad.isEmpty('me')) return;
+      r.setToken(await encodeShare({ enemy: pad.getStrokes('me'), boss: [] }));
+    }, 500);
+  };
+  $('vs-undo').onclick = () => pad.undo();
+  $('vs-clear').onclick = () => pad.clear();
+  $('vs-example').onclick = () => pad.example();
 
   // ── Buttons ──────────────────────────────────────────────────────────
   $('btn-create').onclick = () => {
