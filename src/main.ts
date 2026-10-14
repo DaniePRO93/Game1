@@ -4,6 +4,7 @@ import { buildSprite, DoodleSprite } from './draw/sprite';
 import { Sfx } from './game/audio';
 import { doodleStats } from './game/doodleStats';
 import { Doodles, Game } from './game/game';
+import { DIFFICULTIES, Difficulty } from './game/difficulty';
 import { decodeShare, encodeShare } from './game/share';
 import { currentAccount, initAccount, mountAccountChip, requireAccount } from './net/accountUi';
 import { RunResult, publishMonster, submitScore } from './net/backend';
@@ -152,6 +153,35 @@ for (const m of MAPS) {
 }
 pickSoloMap(soloMap, params.has('map'));
 
+// ── Difficulty (solo, remembered) ────────────────────────────────────────
+const DIFF_KEY = 'doodle-fps.difficulty.v1';
+let difficulty: Difficulty = 'normal';
+try {
+  const saved = params.get('difficulty') ?? localStorage.getItem(DIFF_KEY);
+  if (saved && saved in DIFFICULTIES) difficulty = saved as Difficulty;
+} catch {
+  /* default */
+}
+function pickDifficulty(d: Difficulty): void {
+  difficulty = d;
+  for (const el of Array.from(document.querySelectorAll<HTMLButtonElement>('#diff-list .diff-btn'))) el.classList.toggle('active', el.dataset.diff === d);
+  $('diff-blurb').textContent = DIFFICULTIES[d].blurb;
+  try {
+    localStorage.setItem(DIFF_KEY, d);
+  } catch {
+    /* ignore */
+  }
+}
+for (const d of Object.values(DIFFICULTIES)) {
+  const b = document.createElement('button');
+  b.className = 'diff-btn';
+  b.dataset.diff = d.id;
+  b.textContent = d.label;
+  b.onclick = () => pickDifficulty(d.id);
+  $('diff-list').append(b);
+}
+pickDifficulty(difficulty);
+
 // ── Drawing sheets + live stat card ──────────────────────────────────────
 for (const tab of Array.from(document.querySelectorAll<HTMLButtonElement>('.tab'))) {
   tab.onclick = () => {
@@ -298,7 +328,7 @@ function startGame(fresh: boolean): void {
     }
     doodles = makeDoodles();
   }
-  game.start(doodles);
+  game.start(doodles, difficulty);
   show('playing');
   if (testMode) input.locked = true;
   else input.lock();
@@ -384,7 +414,7 @@ $('btn-publish').onclick = () => {
 game.onDeath = () => {
   input.unlock();
   $('over-share').style.display = 'none';
-  $('over-stats').textContent = `wave ${game.wave} · ${game.kills} kills · best combo ×${game.combo.best} · score ${game.score}`;
+  $('over-stats').textContent = `${game.difficulty.label} · wave ${game.wave} · ${game.kills} kills · best combo ×${game.combo.best} · score ${game.score}`;
   const run: RunResult = {
     score: game.score,
     wave: game.wave,

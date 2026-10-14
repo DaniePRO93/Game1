@@ -968,3 +968,29 @@ button.big {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Difficulty picker (solo). */
+.diff-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.diff-list {
+  display: flex;
+  gap: 6px;
+}
+.diff-btn {
+  font-size: 18px;
+  padding: 2px 14px;
+  opacity: 0.55;
+}
+.diff-btn.active {
+  opacity: 1;
+  color: var(--red);
+  border-color: var(--red);
+}
+.diff-blurb {
+  font-size: 15px;
+  opacity: 0.75;
+  max-width: 320px;
+}

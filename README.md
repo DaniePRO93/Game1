@@ -37,6 +37,9 @@ npm run build    # type-check + production build into dist/
 - **Color mode:** a toggle on the drawing screen. The world switches to colored ink but keeps the pen outlines and hatching: grey concrete building, white ground, light-blue sky, yellow sun, a yellow-and-orange crane, and real-world colors for everything else (red brick, wooden crates, colored shipping containers). Paints are named in `src/render/palette.ts`.
 - **Share drawings:** makes a link containing your enemy and boss drawings. From the game-over screen it also includes your score, as a challenge. Links only work for friends when the game is hosted somewhere public; a localhost link only works on your own computer.
 
+## Difficulty (solo)
+Easy / normal / hard in the menu (`src/game/difficulty.ts`). It scales enemy HP, enemy damage, fire rate, bullet speed, wave size and how many are alive at once. Score is multiplied by 0.5 / 1 / 1.5 so easy runs don't top the leaderboard; the server's score ceiling allows for the 1.5× (`supabase/migrations/20261014200000_difficulty_score_ceiling.sql`).
+
 ## Maps
 Five maps (`src/world/maps/`, registry in `src/world/level.ts`), built from boxes with the small DSL in `src/world/builder.ts`. Every box carries both looks (ink style + color paint).
 

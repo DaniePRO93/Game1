@@ -8,6 +8,7 @@ import type { Hud } from '../ui/hud';
 import type { Sfx } from './audio';
 import { GameClock } from './clock';
 import { Combo } from './combo';
+import { DIFFICULTIES, Difficulty, DifficultyDef, scaleQueue } from './difficulty';
 import { DoodleStats, doodleStats } from './doodleStats';
 import { ENEMY_DEFS, Enemy, EnemyContext } from './enemy';
 import { FX } from './fx';
@@ -86,6 +87,7 @@ export class Game {
   readonly combo = new Combo();
   private owned: Record<string, number> = {};
   mods: Mods = modsFrom({});
+  difficulty: DifficultyDef = DIFFICULTIES.normal;
   /** Real-time seconds left on the wave clock (bonus only). */
   private clockLeft = 0;
   private lastTick = 0;
@@ -212,8 +214,9 @@ export class Game {
     return styleMaterial(kind === 'ammo' ? 'brick' : 'tone');
   }
 
-  start(doodles: Doodles): void {
+  start(doodles: Doodles, difficulty: Difficulty = 'normal'): void {
     this.doodles = doodles;
+    this.difficulty = DIFFICULTIES[difficulty];
     this.stats = { enemy: statsOf(doodles.enemy), boss: statsOf(doodles.boss) };
     this.owned = {};
     this.combo.reset();
@@ -569,7 +572,7 @@ export class Game {
     const prevMult = this.combo.mult;
     const mult = this.combo.onKill(erased || this.clock.slowAmount > 0.5);
     if (mult > prevMult) this.sfx.combo(mult);
-    this.score += Math.round(e.def.score * (head ? 1.5 : 1) * mult);
+    this.score += Math.round(e.def.score * (head ? 1.5 : 1) * mult * this.difficulty.score);
     this.meter.onKill(head);
     if (this.mods.healOnKill) this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.mods.healOnKill);
     if (erased) this.fx.erase(e, ERASER_PINK);
@@ -668,7 +671,7 @@ export class Game {
   // ── Waves ─────────────────────────────────────────────────────────────
   private nextWave(): void {
     this.wave++;
-    this.queue = spawnQueue(this.wave);
+    this.queue = scaleQueue(spawnQueue(this.wave), this.difficulty.count);
     this.waveState = 'intro';
     this.stateTimer = 2.2;
     this.spawnTimer = 0;
@@ -703,15 +706,15 @@ export class Game {
       if (this.clockLeft === 0) this.hud.hint('clock ran out: no time bonus this wave', 2);
     }
     this.spawnTimer -= dt;
-    if (this.queue.length && this.spawnTimer <= 0 && this.enemies.length < maxAlive(this.wave)) {
+    if (this.queue.length && this.spawnTimer <= 0 && this.enemies.length < Math.max(2, maxAlive(this.wave) + this.difficulty.maxAlive)) {
       this.spawnEnemy(this.queue.shift()!);
       this.spawnTimer = 0.9;
     }
     if (!this.queue.length && !this.enemies.length) {
       this.waveState = 'break';
       this.stateTimer = 1.8;
-      const clear = 50 * this.wave;
-      const tb = timeBonus(this.wave, this.clockLeft);
+      const clear = Math.round(50 * this.wave * this.difficulty.score);
+      const tb = Math.round(timeBonus(this.wave, this.clockLeft) * this.difficulty.score);
       this.beatClock = tb > 0;
       this.score += clear + tb;
       this.hud.banner(tb > 0 ? `WAVE CLEARED  +${clear}  ⏱ +${tb}` : `WAVE CLEARED  +${clear}`);
@@ -733,7 +736,10 @@ export class Game {
     const hpScale = kind === 'boss' ? 1 + (this.wave / 5 - 1) * 0.5 : 1 + (this.wave - 1) * 0.06;
     const boss = kind === 'boss';
     const st = boss ? this.stats.boss : this.stats.enemy;
-    const e = new Enemy(ENEMY_DEFS[kind], boss ? this.doodles.boss : this.doodles.enemy, pos, hpScale * st.hpMult, st.speedMult);
+    const d = this.difficulty;
+    const base = ENEMY_DEFS[kind];
+    const def = { ...base, fireInterval: base.fireInterval * d.fireInterval, projSpeed: base.projSpeed * d.projSpeed, damage: base.damage * d.enemyDamage };
+    const e = new Enemy(def, boss ? this.doodles.boss : this.doodles.enemy, pos, hpScale * st.hpMult * d.enemyHp, st.speedMult);
     this.enemies.push(e);
     this.overlay.add(e.mesh, e.shadow);
   }
