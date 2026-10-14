@@ -88,7 +88,21 @@ export class Sfx {
         this.burst(0.4, 3000, 0.4, 0.9, 'lowpass', 150);
         this.tone(0.3, 220, 30, 0.5, 'sawtooth');
         break;
+      case 'minigun':
+        this.burst(0.05, 2000, 0.9, 0.35);
+        this.tone(0.04, 150, 70, 0.18);
+        break;
+      case 'railgun':
+        this.tone(0.5, 1400, 90, 0.45, 'sawtooth');
+        this.burst(0.3, 4000, 0.3, 0.7, 'lowpass', 300);
+        break;
     }
+  }
+
+  /** Big "killstreak!" sting. */
+  streak(): void {
+    this.tone(0.12, 400, 800, 0.25, 'square');
+    setTimeout(() => this.tone(0.2, 600, 1200, 0.25, 'square'), 110);
   }
 
   jump(): void {

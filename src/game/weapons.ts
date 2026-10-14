@@ -1,4 +1,4 @@
-export type WeaponId = 'rifle' | 'shotgun' | 'pistol' | 'sniper' | 'eraser';
+export type WeaponId = 'rifle' | 'shotgun' | 'pistol' | 'sniper' | 'eraser' | 'minigun' | 'railgun';
 
 export interface WeaponDef {
   id: WeaponId;
@@ -19,17 +19,36 @@ export interface WeaponDef {
   /** Multiplier vs heavies and the boss. */
   heavyMult: number;
   recoil: number;
+  /** Headshot multiplier for this gun (default HEADSHOT_MULT). */
+  headMult?: number;
+  /** Extra targets a shot passes through. */
+  pierce?: number;
+  /** Seconds of holding the trigger before it fires (minigun). */
+  spinUp?: number;
+  /** Paint colors (hues 0..1) it splashes, from the gun's own colors. */
+  paint: number[];
   /** Melee: hits everything within `range` m and `arc` rad of center, never uses ammo. */
   melee?: { range: number; arc: number; lunge: number };
 }
 
 export const WEAPONS: WeaponDef[] = [
-  { id: 'rifle', name: 'RIFLE', hint: 'auto · hold to spray', auto: true, interval: 0.1, damage: 22, pellets: 1, spread: 0.014, mag: 30, reserve: 150, reload: 1.6, falloffStart: 25, falloffEnd: 60, heavyMult: 1, recoil: 0.012 },
-  { id: 'shotgun', name: 'SHOTGUN', hint: 'ends heavies', auto: false, interval: 0.85, damage: 14, pellets: 8, spread: 0.075, mag: 6, reserve: 36, reload: 2.0, falloffStart: 6, falloffEnd: 20, heavyMult: 1.75, recoil: 0.06 },
-  { id: 'pistol', name: 'PISTOL', hint: 'never runs dry', auto: false, interval: 0.18, damage: 30, pellets: 1, spread: 0.008, mag: 12, reserve: Infinity, reload: 1.1, falloffStart: 20, falloffEnd: 50, heavyMult: 1, recoil: 0.025 },
-  { id: 'sniper', name: 'SNIPER', hint: 'right-click to scope', auto: false, interval: 1.1, damage: 120, pellets: 1, spread: 0.05, mag: 5, reserve: 25, reload: 2.4, falloffStart: 200, falloffEnd: 300, heavyMult: 1.25, recoil: 0.09 },
-  { id: 'eraser', name: 'ERASER SWORD', hint: 'click to swing · erases doodles', auto: true, interval: 0.42, damage: 100, pellets: 1, spread: 0, mag: Infinity, reserve: Infinity, reload: 0, falloffStart: Infinity, falloffEnd: Infinity, heavyMult: 1, recoil: 0, melee: { range: 3.2, arc: 1.0, lunge: 14 } },
+  { id: 'rifle', name: 'RIFLE', hint: 'auto · hold to spray', auto: true, interval: 0.1, damage: 22, pellets: 1, spread: 0.014, mag: 30, reserve: 150, reload: 1.6, falloffStart: 25, falloffEnd: 60, heavyMult: 1, recoil: 0.012, paint: [0.07, 0.5, 0.14] },
+  { id: 'shotgun', name: 'SHOTGUN', hint: 'ends heavies', auto: false, interval: 0.85, damage: 14, pellets: 8, spread: 0.075, mag: 6, reserve: 36, reload: 2.0, falloffStart: 6, falloffEnd: 20, heavyMult: 1.75, recoil: 0.06, paint: [0.0, 0.13, 0.48] },
+  { id: 'pistol', name: 'PISTOL', hint: 'never runs dry', auto: false, interval: 0.18, damage: 30, pellets: 1, spread: 0.008, mag: 12, reserve: Infinity, reload: 1.1, falloffStart: 20, falloffEnd: 50, heavyMult: 1, recoil: 0.025, paint: [0.33, 0.78] },
+  // Body shots no longer one-shot everything; headshots (×3) and a pierce reward precision.
+  { id: 'sniper', name: 'SNIPER', hint: 'aim to scope · headshots ×3 · pierces one', auto: false, interval: 1.2, damage: 95, pellets: 1, spread: 0.05, mag: 5, reserve: 25, reload: 2.4, falloffStart: 200, falloffEnd: 300, heavyMult: 1.25, recoil: 0.09, headMult: 3, pierce: 1, paint: [0.75, 0.55, 0.92] },
+  { id: 'eraser', name: 'ERASER SWORD', hint: 'click to swing · erases doodles', auto: true, interval: 0.42, damage: 100, pellets: 1, spread: 0, mag: Infinity, reserve: Infinity, reload: 0, falloffStart: Infinity, falloffEnd: Infinity, heavyMult: 1, recoil: 0, melee: { range: 3.2, arc: 1.0, lunge: 14 }, paint: [0.95, 0.14] },
 ];
+
+/** Killstreak rewards: temporary, limited ammo, no reload. */
+export const MINIGUN: WeaponDef = { id: 'minigun', name: 'MINIGUN', hint: 'killstreak! hold to spin up and shred', auto: true, interval: 0.05, damage: 13, pellets: 1, spread: 0.035, mag: 200, reserve: 0, reload: 0, falloffStart: 20, falloffEnd: 50, heavyMult: 1.2, recoil: 0.005, spinUp: 0.35, paint: [0.02, 0.1, 0.16] };
+export const RAILGUN: WeaponDef = { id: 'railgun', name: 'RAILGUN', hint: 'killstreak! pierces everything in line', auto: false, interval: 0.9, damage: 300, pellets: 1, spread: 0.004, mag: 6, reserve: 0, reload: 0, falloffStart: Infinity, falloffEnd: Infinity, heavyMult: 1.5, recoil: 0.1, pierce: 99, paint: [0.52, 0.6, 0.85] };
+export const STREAKS: { kills: number; def: WeaponDef }[] = [
+  { kills: 3, def: MINIGUN },
+  { kills: 5, def: RAILGUN },
+];
+/** Every gun, for sending a weapon over the network by index. */
+export const ALL_WEAPONS: WeaponDef[] = [...WEAPONS, MINIGUN, RAILGUN];
 
 export const HEADSHOT_MULT = 2;
 

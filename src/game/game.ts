@@ -3,7 +3,7 @@ import type { DoodleSprite } from '../draw/sprite';
 import { cloudColorTex, cloudTex, markerTex, sunColorTex, sunTex } from '../render/ink';
 import { paintMaterial } from '../render/palette';
 import { buildLevel, Level, MapId, styleMaterial } from '../world/level';
-import { raycastBoxes } from '../world/collision';
+import { Box, raycastBoxes } from '../world/collision';
 import type { Hud } from '../ui/hud';
 import type { Sfx } from './audio';
 import { GameClock } from './clock';
@@ -20,7 +20,7 @@ import { TimeMeter } from './timeMeter';
 import { ViewModel } from './viewmodel';
 import { Mods, Upgrade, modsFrom, rollUpgrades } from './upgrades';
 import { EnemyKind, isBossWave, maxAlive, parTime, spawnQueue, timeBonus } from './waves';
-import { HEADSHOT_MULT, WEAPONS, WeaponId, WeaponState, damageAt } from './weapons';
+import { ALL_WEAPONS, HEADSHOT_MULT, STREAKS, WEAPONS, WeaponDef, WeaponId, WeaponState, damageAt } from './weapons';
 
 interface Pickup {
   kind: 'ammo' | 'health';
@@ -48,7 +48,7 @@ export interface VersusLink {
 }
 
 /** Versus damage scaling, so one-hit weapons don't dominate. */
-const VERSUS_DAMAGE: Record<WeaponId, number> = { rifle: 1, shotgun: 1, pistol: 1, sniper: 0.8, eraser: 0.7 };
+const VERSUS_DAMAGE: Record<WeaponId, number> = { rifle: 1, shotgun: 1, pistol: 1, sniper: 0.8, eraser: 0.7, minigun: 0.8, railgun: 0.6 };
 const RESPAWN_S = 3;
 const SPAWN_SHIELD = 1.5;
 const REGEN_DELAY = 4;
@@ -60,6 +60,20 @@ const ERASER_PINK = new THREE.Color('#ee7fae');
 /** Mouse sensitivity at 1.0x on the slider. */
 export const BASE_SENSITIVITY = 0.0022;
 const ZOOM_FOV = 22;
+/** Field of view while aiming down sights (non-sniper). */
+const AIM_FOV = 55;
+/** Paint splat size per gun. */
+const PAINT_SIZE: Record<WeaponId, number> = { rifle: 0.85, shotgun: 0.55, pistol: 0.75, sniper: 1.3, eraser: 0.9, minigun: 0.65, railgun: 1.7 };
+const paintColors = new Map<number, THREE.Color>();
+function paintColor(def: WeaponDef): THREE.Color {
+  const h = def.paint[Math.floor(Math.random() * def.paint.length)];
+  let c = paintColors.get(h);
+  if (!c) {
+    c = new THREE.Color().setHSL(h, 0.9, 0.55);
+    paintColors.set(h, c);
+  }
+  return c;
+}
 
 export class Game {
   readonly world = new THREE.Scene();
@@ -104,6 +118,14 @@ export class Game {
   private stateTimer = 0;
   private damageFlash = 0;
   private zoomed = false;
+  /** Holding the aim button (right mouse or F). */
+  private aiming = false;
+  /** Minigun spin-up 0..1. */
+  private spin = 0;
+  /** Kills in a row (solo: without getting hit; versus: without dying). */
+  streak = 0;
+  /** Weapon slot to go back to when a killstreak gun runs dry. */
+  private streakReturn = 0;
   private fireBuffer = 0;
   private wasSlow = false;
   private deathT = 0;
@@ -229,6 +251,8 @@ export class Game {
     this.weapons = WEAPONS.map((d) => new WeaponState(d));
     this.switchWeapon(0, true);
     this.applyMods();
+    this.streak = 0;
+    this.spin = 0;
     this.player.spawn(this.level.playerSpawn);
     this.meter.reset();
     this.clock.timeScale = 1;
@@ -242,7 +266,7 @@ export class Game {
     this.zoomed = false;
     this.viewmodel.root.visible = true;
     this.nextWave();
-    this.hud.hint('WASD move · SPACE jump (twice!) · C slide · hold SHIFT to slow time · 5 = eraser sword', 6);
+    this.hud.hint('WASD move · SPACE jump (twice!) · C slide · right-click/F aim · hold SHIFT to slow time', 6);
   }
 
   /** Straight-down view of the whole map (used to render the map vote pictures). */
@@ -295,7 +319,7 @@ export class Game {
     const wDt = this.clock.worldDt(realDt);
     const pDt = this.clock.playerDt(realDt);
 
-    this.player.look(input, this.zoomed ? 0.35 : 1);
+    this.player.look(input, this.zoomed ? 0.35 : this.aiming ? 0.65 : 1);
     this.player.update(pDt, input, this.level.boxes);
     this.player.applyTriggers(this.level.triggers, pDt, this.level.boxes);
     this.level.update(realDt);
@@ -356,6 +380,7 @@ export class Game {
       this.player.hp -= dmg;
       this.damageFlash = 1;
       this.sfx.hurt();
+      this.streak = 0;
       if (this.player.hp <= 0) this.die();
     }
     this.damageFlash = Math.max(0, this.damageFlash - realDt * 1.8);
@@ -367,13 +392,13 @@ export class Game {
 
     // Zoom FOV, with a speed kick when sliding / moving fast.
     const speedKick = Math.max(0, Math.min(12, (this.player.speed - 7) * 1.5));
-    const fov = this.zoomed ? ZOOM_FOV : BASE_FOV + speedKick;
+    const fov = this.zoomed ? ZOOM_FOV : this.aiming ? AIM_FOV : BASE_FOV + speedKick;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-realDt * 20));
       this.camera.updateProjectionMatrix();
     }
     const w = this.weapon;
-    this.viewmodel.update(pDt, this.player.grounded ? this.player.speed : 0, w.reloading > 0 ? 1 - w.reloading / w.def.reload : 0, this.zoomed);
+    this.viewmodel.update(pDt, this.player.grounded ? this.player.speed : 0, w.reloading > 0 ? 1 - w.reloading / w.def.reload : 0, this.zoomed, this.aiming ? 1 : 0, this.spin);
     this.pushHud();
   }
 
@@ -394,14 +419,20 @@ export class Game {
     if (input.pressed.has('KeyQ')) this.switchWeapon((this.wIdx + 1) % n);
 
     const w = this.weapon;
-    const wasReloading = w.reloading > 0;
     w.update(dt);
     if (input.pressed.has('KeyR') && w.startReload()) this.sfx.reload();
-    this.zoomed = w.def.id === 'sniper' && input.rightDown && w.reloading <= 0;
+    // Aim down sights: right mouse or F. The sniper aims through its scope.
+    this.aiming = (input.rightDown || input.keys.has('KeyF')) && !w.def.melee && w.reloading <= 0;
+    this.zoomed = this.aiming && w.def.id === 'sniper';
+    this.player.moveMult = (this.aiming ? 0.6 : 1) * (w.def.id === 'minigun' ? 0.8 : 1);
+
+    // Minigun spins up while the trigger is held.
+    if (w.def.spinUp) this.spin = Math.max(0, Math.min(1, this.spin + (input.mouseDown ? dt / w.def.spinUp : -dt * 2)));
+    else this.spin = 0;
 
     if (input.mouseClicked) this.fireBuffer = 0.15;
     else this.fireBuffer = Math.max(0, this.fireBuffer - dt);
-    const want = w.def.auto ? input.mouseDown : this.fireBuffer > 0;
+    const want = w.def.auto ? input.mouseDown && (!w.def.spinUp || this.spin >= 1) : this.fireBuffer > 0;
     if (want) {
       if (w.ammo === 0 && w.reloading <= 0) {
         if (w.startReload()) this.sfx.reload();
@@ -413,7 +444,50 @@ export class Game {
         if (w.ammo === 0 && w.startReload()) this.sfx.reload();
       }
     }
-    if (wasReloading && w.reloading <= 0) this.zoomed = false;
+    // Killstreak guns go away when they run dry.
+    if (this.wIdx >= WEAPONS.length && w.ammo === 0) this.dropStreakWeapon();
+  }
+
+  // ── Killstreaks ─────────────────────────────────────────────────────
+  private addStreakKill(): void {
+    this.streak++;
+    const reward = STREAKS.find((s) => s.kills === this.streak);
+    if (reward) this.giveStreakWeapon(reward.def);
+  }
+
+  private giveStreakWeapon(def: WeaponDef): void {
+    if (this.weapons.length > WEAPONS.length) this.weapons.length = WEAPONS.length;
+    else this.streakReturn = this.wIdx;
+    if (this.wIdx >= WEAPONS.length) this.wIdx = this.streakReturn;
+    const st = new WeaponState(def);
+    st.rateMult = this.mods.fireRate;
+    this.weapons.push(st);
+    this.switchWeapon(this.weapons.length - 1, true);
+    this.viewmodel.fire(0); // no-op kick; setWeapon already played the swap
+    this.hud.banner(`KILLSTREAK ×${this.streak}: ${def.name}!`, 2.2);
+    this.hud.hint(def.hint, 3);
+    this.sfx.streak();
+  }
+
+  private dropStreakWeapon(): void {
+    if (this.weapons.length <= WEAPONS.length) return;
+    this.weapons.length = WEAPONS.length;
+    this.wIdx = Math.min(this.streakReturn, WEAPONS.length - 1);
+    this.viewmodel.setWeapon(this.weapon.def.id);
+    this.weapon.cooldown = Math.max(this.weapon.cooldown, 0.25);
+    this.spin = 0;
+  }
+
+  /** Splash paint where a shot landed. */
+  private paintAt(p: THREE.Vector3, box: Box, def: WeaponDef, scale = 1): void {
+    this.fx.paint(p, box, paintColor(def), PAINT_SIZE[def.id] * scale);
+  }
+
+  /** A hit on a doodle splatters paint on whatever is right behind it. */
+  private paintBehind(from: THREE.Vector3, dir: THREE.Vector3, def: WeaponDef): void {
+    const start = from.clone().addScaledVector(dir, 0.3);
+    const hit = raycastBoxes(this.level.boxes, start, dir, 6);
+    if (hit) this.paintAt(start.addScaledVector(dir, hit.t), hit.box, def, 0.8);
   }
 
   private shoot(): void {
@@ -424,8 +498,10 @@ export class Game {
     const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
     const muzzle = this.viewmodel.muzzleWorld(new THREE.Vector3());
 
-    let spread = this.zoomed ? 0.0004 : def.spread;
+    let spread = this.zoomed ? 0.0004 : def.spread * (this.aiming ? 0.35 : 1);
     if (!this.player.grounded) spread *= 1.6;
+    const maxHits = 1 + (def.pierce ?? 0);
+    const headMult = def.headMult ?? HEADSHOT_MULT;
 
     const hits = new Map<Enemy, { dmg: number; head: boolean; dir: THREE.Vector3 }>();
     const remoteHits = new Map<RemotePlayer, { dmg: number; head: boolean }>();
@@ -436,43 +512,53 @@ export class Game {
       const dir = fwd.clone().addScaledVector(right, Math.cos(a) * r).addScaledVector(up, Math.sin(a) * r).normalize();
 
       const wh = raycastBoxes(this.level.boxes, origin, dir, 250);
-      let best: { e: Enemy; t: number; head: boolean } | null = null;
+      const wallT = wh ? wh.t : Infinity;
+      // Everything the shot crosses before the wall, nearest first; piercing guns take several.
+      const cands: { t: number; head: boolean; e?: Enemy; r?: RemotePlayer }[] = [];
       for (const e of this.enemies) {
         const h = e.rayHit(origin, dir);
-        if (h && (!wh || h.t < wh.t) && (!best || h.t < best.t)) best = { e, t: h.t, head: h.headshot };
+        if (h && h.t < wallT) cands.push({ t: h.t, head: h.headshot, e });
       }
-      let bestR: { r: RemotePlayer; t: number; head: boolean } | null = null;
       if (this.versus) {
         for (const rp of this.remotes.values()) {
           const h = rp.rayHit(origin, dir);
-          if (h && (!wh || h.t < wh.t) && (!bestR || h.t < bestR.t)) bestR = { r: rp, t: h.t, head: h.headshot };
+          if (h && h.t < wallT) cands.push({ t: h.t, head: h.headshot, r: rp });
         }
       }
-      const endT = bestR ? bestR.t : best ? best.t : wh ? wh.t : 120;
+      cands.sort((x, y) => x.t - y.t);
+      const taken = cands.slice(0, maxHits);
+      for (const c of taken) {
+        const at = origin.clone().addScaledVector(dir, c.t);
+        if (c.r) {
+          const dmg = damageAt(def, c.t) * (c.head ? headMult : 1) * VERSUS_DAMAGE[def.id];
+          const prev = remoteHits.get(c.r);
+          if (prev) {
+            prev.dmg += dmg;
+            prev.head ||= c.head;
+          } else remoteHits.set(c.r, { dmg, head: c.head });
+          this.fx.spray(at, dir, c.r.ink, def.pellets > 1 ? 2 : 5);
+        } else if (c.e) {
+          const mult = (c.head ? headMult + this.mods.headshot : 1) * (c.e.def.heavy ? def.heavyMult : 1) * this.mods.damage;
+          const dmg = damageAt(def, c.t) * mult;
+          const prev = hits.get(c.e);
+          if (prev) {
+            prev.dmg += dmg;
+            prev.head ||= c.head;
+          } else hits.set(c.e, { dmg, head: c.head, dir });
+          this.fx.spray(at, dir, c.e.def.ink, def.pellets > 1 ? 2 : 5);
+        }
+        this.paintBehind(at, dir, def);
+      }
+      const stopped = taken.length >= maxHits;
+      const endT = stopped ? taken[taken.length - 1].t : wh ? wh.t : 120;
       const end = origin.clone().addScaledVector(dir, endT);
-      if (bestR) {
-        const dmg = damageAt(def, bestR.t) * (bestR.head ? HEADSHOT_MULT : 1) * VERSUS_DAMAGE[def.id];
-        const prev = remoteHits.get(bestR.r);
-        if (prev) {
-          prev.dmg += dmg;
-          prev.head ||= bestR.head;
-        } else remoteHits.set(bestR.r, { dmg, head: bestR.head });
-        this.fx.spray(end, dir, bestR.r.ink, def.pellets > 1 ? 2 : 5);
-      } else if (best) {
-        const mult = (best.head ? HEADSHOT_MULT + this.mods.headshot : 1) * (best.e.def.heavy ? def.heavyMult : 1) * this.mods.damage;
-        const prev = hits.get(best.e);
-        const dmg = damageAt(def, best.t) * mult;
-        if (prev) {
-          prev.dmg += dmg;
-          prev.head ||= best.head;
-        } else hits.set(best.e, { dmg, head: best.head, dir });
-        this.fx.spray(end, dir, best.e.def.ink, def.pellets > 1 ? 2 : 5);
-      } else if (wh) {
-        this.fx.splat(end, wh.box, def.id === 'sniper' ? 0.5 : 0.28);
+      if (!stopped && wh) {
+        this.paintAt(end, wh.box, def);
         if (this.mods.ricochet) this.ricochet(end, def, hits);
       }
       if (p < 4) {
-        this.fx.tracer(muzzle.clone().addScaledVector(dir, 0.15), end);
+        if (def.id === 'railgun') this.fx.beam(muzzle.clone().addScaledVector(dir, 0.15), end, paintColor(def));
+        else this.fx.tracer(muzzle.clone().addScaledVector(dir, 0.15), end);
         ends.push([+end.x.toFixed(2), +end.y.toFixed(2), +end.z.toFixed(2)]);
       }
     }
@@ -492,7 +578,8 @@ export class Game {
         else this.sfx.hit();
         this.hud.hitmarker(h.head, false);
       }
-      this.versus.sendShot([+muzzle.x.toFixed(2), +muzzle.y.toFixed(2), +muzzle.z.toFixed(2)], ends, this.wIdx);
+      const wi = ALL_WEAPONS.findIndex((d) => d.id === def.id);
+      this.versus.sendShot([+muzzle.x.toFixed(2), +muzzle.y.toFixed(2), +muzzle.z.toFixed(2)], ends, wi);
     }
 
     this.fx.flash(muzzle, def.id === 'shotgun' ? 0.5 : def.id === 'sniper' ? 0.55 : 0.32);
@@ -569,6 +656,7 @@ export class Game {
 
   private onKill(e: Enemy, head: boolean, dir: THREE.Vector3, erased = false): void {
     this.kills++;
+    this.addStreakKill();
     const prevMult = this.combo.mult;
     const mult = this.combo.onKill(erased || this.clock.slowAmount > 0.5);
     if (mult > prevMult) this.sfx.combo(mult);
@@ -891,6 +979,7 @@ export class Game {
     this.damageFlash = 0;
     this.zoomed = false;
     this.spawnShield = SPAWN_SHIELD;
+    this.spin = 0;
     this.sinceHurt = 0;
     this.viewmodel.root.visible = true;
     this.camera.rotation.z = 0;
@@ -909,6 +998,8 @@ export class Game {
       this.player.hp = 0;
       this.respawnT = RESPAWN_S;
       this.zoomed = false;
+      this.aiming = false;
+      this.streak = 0;
       this.viewmodel.root.visible = false;
       this.versus.sendDied(from, head, erased);
       const name = this.remotes.get(from)?.name ?? 'someone';
@@ -929,6 +1020,7 @@ export class Game {
     }
     const vName = r?.name ?? 'someone';
     if (by === selfId) {
+      this.addStreakKill();
       this.sfx.kill();
       this.hud.hitmarker(head, true);
       this.hud.hint(`you ${erased ? 'erased' : 'scribbled out'} ${vName}${head ? ' (headshot!)' : ''}`, 2);
@@ -943,8 +1035,19 @@ export class Game {
     const r = this.remotes.get(id);
     if (!r || !Array.isArray(from) || from.length !== 3) return;
     const o = new THREE.Vector3(from[0], from[1], from[2]);
+    const def = ALL_WEAPONS[weapon] ?? WEAPONS[0];
     for (const e of (ends ?? []).slice(0, 4)) {
-      if (Array.isArray(e) && e.length === 3) this.fx.tracer(o, new THREE.Vector3(e[0], e[1], e[2]));
+      if (!Array.isArray(e) || e.length !== 3) continue;
+      const end = new THREE.Vector3(e[0], e[1], e[2]);
+      if (def.id === 'railgun') this.fx.beam(o, end, paintColor(def));
+      else this.fx.tracer(o, end);
+      // Their paint lands on the same walls.
+      const dir = end.clone().sub(o);
+      const len = dir.length();
+      if (len < 0.01) continue;
+      dir.divideScalar(len);
+      const hit = raycastBoxes(this.level.boxes, o, dir, len + 0.3);
+      if (hit) this.paintAt(o.clone().addScaledVector(dir, hit.t), hit.box, def);
     }
     this.fx.flash(o, weapon === 1 ? 0.5 : 0.35, false);
     if (o.distanceTo(this.player.pos) < 60) this.sfx.enemyShot();
@@ -993,7 +1096,7 @@ export class Game {
     }
 
     const input = this.input;
-    this.player.look(input, this.zoomed ? 0.35 : 1);
+    this.player.look(input, this.zoomed ? 0.35 : this.aiming ? 0.65 : 1);
     this.player.update(realDt, input, this.level.boxes);
     this.player.applyTriggers(this.level.triggers, realDt, this.level.boxes);
     switch (this.player.event) {
@@ -1027,13 +1130,13 @@ export class Game {
     this.fx.update(realDt, realDt);
 
     const speedKick = Math.max(0, Math.min(12, (this.player.speed - 7) * 1.5));
-    const fov = this.zoomed ? ZOOM_FOV : BASE_FOV + speedKick;
+    const fov = this.zoomed ? ZOOM_FOV : this.aiming ? AIM_FOV : BASE_FOV + speedKick;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-realDt * 20));
       this.camera.updateProjectionMatrix();
     }
     const w = this.weapon;
-    this.viewmodel.update(realDt, this.player.grounded ? this.player.speed : 0, w.reloading > 0 ? 1 - w.reloading / w.def.reload : 0, this.zoomed);
+    this.viewmodel.update(realDt, this.player.grounded ? this.player.speed : 0, w.reloading > 0 ? 1 - w.reloading / w.def.reload : 0, this.zoomed, this.aiming ? 1 : 0, this.spin);
     this.sendSnap();
     this.pushHud();
   }

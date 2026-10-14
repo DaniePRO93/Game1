@@ -52,3 +52,19 @@ describe('eraser sword', () => {
     expect(w.startReload()).toBe(false);
   });
 });
+
+import { ALL_WEAPONS, STREAKS } from '../src/game/weapons';
+
+describe('weapon balance + killstreaks', () => {
+  it('sniper body shots no longer one-shot heavies or high-wave elites, headshots still do', () => {
+    const sniper = WEAPONS.find((w) => w.id === 'sniper')!;
+    expect(sniper.damage).toBeLessThan(100);
+    expect(sniper.damage * (sniper.headMult ?? 2)).toBeGreaterThan(240);
+  });
+
+  it('killstreak rewards come at 3 and 5 kills, every gun has paint colors and a unique id', () => {
+    expect(STREAKS.map((s) => [s.kills, s.def.id])).toEqual([[3, 'minigun'], [5, 'railgun']]);
+    for (const w of ALL_WEAPONS) expect(w.paint.length).toBeGreaterThan(0);
+    expect(new Set(ALL_WEAPONS.map((w) => w.id)).size).toBe(ALL_WEAPONS.length);
+  });
+});

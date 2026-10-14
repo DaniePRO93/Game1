@@ -45,6 +45,8 @@ export class Player implements Body {
   airJumps = 1;
   slideMult = 1;
   speedMult = 1;
+  /** Temporary movement scale (aiming down sights, heavy minigun). */
+  moveMult = 1;
 
   sliding = 0;
   private slideCooldown = 0;
@@ -125,7 +127,7 @@ export class Player implements Body {
     const cos = Math.cos(this.yaw);
     const wx = fx * cos + fz * sin;
     const wz = -fx * sin + fz * cos;
-    const walk = WALK * this.speedMult;
+    const walk = WALK * this.speedMult * this.moveMult;
     const hSpeed = Math.hypot(this.vel.x, this.vel.z);
 
     // Timers.

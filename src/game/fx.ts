@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Box } from '../world/collision';
-import { doodleMaterial, dropTex, splatTex, spriteMaterial, starTex } from '../render/ink';
+import { doodleMaterial, dropTex, paintTexes, splatTex, spriteMaterial, starTex } from '../render/ink';
 import type { Enemy } from './enemy';
 
 /** Anything drawn as a doodle billboard that can tear apart (enemies, versus players). */
@@ -127,6 +127,64 @@ export class FX {
     });
   }
 
+  // ── Paint: persistent splats on walls and floors ────────────────────
+  private paintGeo = new THREE.PlaneGeometry(1, 1);
+  private paintMats = new Map<string, THREE.MeshBasicMaterial>();
+  private paints: THREE.Mesh[] = [];
+  private static readonly MAX_PAINT = 400;
+
+  /** Splash paint on the face of `box` at `p`. Stays until clear(). */
+  paint(p: THREE.Vector3, box: Box, color: THREE.Color, size = 0.6): void {
+    const n = faceNormal(p, box);
+    const tex = Math.floor(Math.random() * paintTexes.length);
+    const key = `${color.getHexString()}|${tex}`;
+    let mat = this.paintMats.get(key);
+    if (!mat) {
+      mat = new THREE.MeshBasicMaterial({ map: paintTexes[tex], color, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+      this.paintMats.set(key, mat);
+    }
+    const m = new THREE.Mesh(this.paintGeo, mat);
+    const s = size * (0.7 + Math.random() * 0.6);
+    m.scale.set(s, s, 1);
+    // Small offset, staggered so overlapping splats don't flicker.
+    m.position.copy(p).addScaledVector(n, 0.012 + (this.paints.length % 7) * 0.002);
+    m.lookAt(m.position.clone().add(n));
+    // On walls, keep drips pointing down; on floors any rotation.
+    if (Math.abs(n.y) < 0.5) m.rotateZ((Math.random() - 0.5) * 0.5);
+    else m.rotateZ(Math.random() * Math.PI * 2);
+    this.scene.add(m);
+    this.paints.push(m);
+    if (this.paints.length > FX.MAX_PAINT) this.scene.remove(this.paints.shift()!);
+  }
+
+  clearPaint(): void {
+    for (const m of this.paints) this.scene.remove(m);
+    this.paints = [];
+  }
+
+  /** Thick glowing beam (railgun). */
+  beam(from: THREE.Vector3, to: THREE.Vector3, color: THREE.Color): void {
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false });
+    const m = new THREE.Mesh(tracerGeo, mat);
+    m.position.copy(from);
+    m.lookAt(to);
+    m.scale.set(9, 9, from.distanceTo(to));
+    this.add({
+      obj: m,
+      vel: new THREE.Vector3(),
+      spin: new THREE.Vector3(),
+      life: 0.45,
+      maxLife: 0.45,
+      gravity: 0,
+      fade: (k) => {
+        mat.opacity = k;
+        m.scale.x = m.scale.y = 2 + 7 * k;
+      },
+      dispose: () => mat.dispose(),
+      realTime: true,
+    });
+  }
+
   /** Little ink drops flying off a hit enemy. */
   spray(p: THREE.Vector3, dir: THREE.Vector3, color: THREE.Color, count = 5, size = 0.12): void {
     for (let i = 0; i < count; i++) {
@@ -219,6 +277,7 @@ export class FX {
   }
 
   clear(): void {
+    this.clearPaint();
     for (const p of this.parts) {
       this.scene.remove(p.obj);
       p.dispose();

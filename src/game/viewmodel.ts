@@ -18,9 +18,13 @@ export class ViewModel {
   private swap = 0;
   /** 1 → 0 over a melee swing. */
   private swing = 0;
+  /** 0 = hip, 1 = aiming down sights. */
+  private aimK = 0;
+  private barrels: THREE.Object3D | null = null;
+  private spinAngle = 0;
 
   constructor() {
-    for (const id of ['rifle', 'shotgun', 'pistol', 'sniper', 'eraser'] as WeaponId[]) {
+    for (const id of ['rifle', 'shotgun', 'pistol', 'sniper', 'eraser', 'minigun', 'railgun'] as WeaponId[]) {
       const g = buildGun(id);
       const muzzle = new THREE.Object3D();
       muzzle.position.copy(g.userData.muzzle as THREE.Vector3);
@@ -29,6 +33,7 @@ export class ViewModel {
       g.visible = id === this.current;
       this.models.set(id, g);
       this.root.add(g);
+      if (g.userData.barrels) this.barrels = g.userData.barrels as THREE.Object3D;
     }
     this.root.position.set(0.24, -0.25, -0.42);
   }
@@ -60,18 +65,23 @@ export class ViewModel {
     return this.muzzles.get(this.current)!.getWorldPosition(out);
   }
 
-  update(dt: number, speed: number, reloadK: number, zoomed: boolean): void {
+  /** `aim` 0..1 brings the gun to the center; `spin` 0..1 turns the minigun barrels. */
+  update(dt: number, speed: number, reloadK: number, zoomed: boolean, aim = 0, spin = 0): void {
+    this.aimK += (aim - this.aimK) * (1 - Math.exp(-dt * 16));
+    this.spinAngle += dt * spin * 40;
+    if (this.barrels) this.barrels.rotation.z = this.spinAngle;
+    const a = this.aimK;
     this.kick = Math.max(0, this.kick - dt * 8);
     this.swap = Math.max(0, this.swap - dt * 4);
     this.swing = Math.max(0, this.swing - dt * 4.5);
     this.bobT += dt * speed * 1.6;
-    const bob = Math.min(1, speed / 6);
+    const bob = Math.min(1, speed / 6) * (1 - a * 0.8);
     const reloadDip = Math.sin(Math.min(1, reloadK) * Math.PI);
     this.root.visible = !zoomed;
     this.root.position.set(
-      0.24 + Math.sin(this.bobT) * 0.012 * bob,
-      -0.25 - Math.abs(Math.cos(this.bobT)) * 0.012 * bob - reloadDip * 0.18 - this.swap * 0.3,
-      -0.42 + this.kick * 0.07,
+      0.24 * (1 - a) + Math.sin(this.bobT) * 0.012 * bob,
+      -0.25 + a * 0.04 - Math.abs(Math.cos(this.bobT)) * 0.012 * bob - reloadDip * 0.18 - this.swap * 0.3,
+      -0.42 + a * 0.06 + this.kick * 0.07,
     );
     this.root.rotation.set(this.kick * 0.12 - reloadDip * 0.5, 0, reloadDip * 0.4);
     if (this.swing > 0) {
@@ -134,6 +144,32 @@ function buildGun(id: WeaponId): THREE.Group {
       c(0.92, 0, 0.085, -0.12, 0.05, 0.05, 0.24);
       c(0.75, 0, -0.02, 0.2, 0.06, 0.1, 0.16);
       muzzle = new THREE.Vector3(0, 0.01, -0.78);
+      break;
+    case 'minigun': {
+      // Orange body, a spinning cluster of yellow barrels, red ammo box.
+      c(0.07, 0, -0.01, -0.02, 0.12, 0.13, 0.32);
+      c(0.02, 0.07, -0.1, 0.0, 0.08, 0.12, 0.16);
+      const barrels = new THREE.Group();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const b = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.022, 0.5), colorMaterial(0.15));
+        b.position.set(Math.cos(a) * 0.035, Math.sin(a) * 0.035, 0);
+        barrels.add(b);
+      }
+      barrels.position.set(0, 0.0, -0.4);
+      g.add(barrels);
+      g.userData.barrels = barrels;
+      c(0.07, 0, 0, -0.62, 0.11, 0.11, 0.03);
+      muzzle = new THREE.Vector3(0, 0, -0.68);
+      break;
+    }
+    case 'railgun': // long cyan rails with pink coils
+      c(0.85, 0, 0, -0.05, 0.08, 0.1, 0.4);
+      c(0.52, 0.035, 0.01, -0.45, 0.018, 0.05, 0.55);
+      c(0.52, -0.035, 0.01, -0.45, 0.018, 0.05, 0.55);
+      for (const z of [-0.28, -0.42, -0.56]) c(0.95, 0, 0.01, z, 0.11, 0.11, 0.03);
+      c(0.6, 0, 0.08, -0.05, 0.04, 0.04, 0.2);
+      muzzle = new THREE.Vector3(0, 0.01, -0.75);
       break;
     case 'eraser': {
       // A giant pencil: yellow grip, silver ferrule, pink eraser blade.

@@ -1,4 +1,4 @@
-import { WEAPONS, WeaponId } from '../game/weapons';
+import { ALL_WEAPONS, WEAPONS, WeaponId } from '../game/weapons';
 
 export interface HudState {
   score: number;
@@ -161,7 +161,9 @@ export class Hud {
       ? `<b>∞</b> <span class="small">swing!</span>`
       : s.reloading
         ? `<span class="reloading">reloading…</span>`
-        : `<b>${s.ammo}</b>/${reserve}`;
+        : s.reserve === 0 && s.mag > 0 && !WEAPONS.some((w) => w.id === s.weapon)
+          ? `<b>${s.ammo}</b> <span class="small">killstreak</span>`
+          : `<b>${s.ammo}</b>/${reserve}`;
     const pipCount = melee ? 0 : Math.min(s.mag, 30);
     const filled = Math.round((s.ammo / s.mag) * pipCount);
     let pips = '';
@@ -170,7 +172,7 @@ export class Hud {
     for (const el of Array.from(e.weaponList.children) as HTMLElement[]) {
       el.classList.toggle('active', el.dataset.id === s.weapon);
     }
-    const def = WEAPONS.find((w) => w.id === s.weapon)!;
+    const def = ALL_WEAPONS.find((w) => w.id === s.weapon)!;
     e.weaponName.textContent = def.name;
     e.weaponHint.textContent = def.hint;
     e.meterFill.style.width = `${s.meter * 100}%`;

@@ -37,6 +37,12 @@ npm run build    # type-check + production build into dist/
 - **Color mode:** a toggle on the drawing screen. The world switches to colored ink but keeps the pen outlines and hatching: grey concrete building, white ground, light-blue sky, yellow sun, a yellow-and-orange crane, and real-world colors for everything else (red brick, wooden crates, colored shipping containers). Paints are named in `src/render/palette.ts`.
 - **Share drawings:** makes a link containing your enemy and boss drawings. From the game-over screen it also includes your score, as a challenge. Links only work for friends when the game is hosted somewhere public; a localhost link only works on your own computer.
 
+## Weapons, aiming, paint, killstreaks
+- **Aim down sights:** hold right-click or F (any gun): zoom, ~3× tighter spread, slower movement and look. The sniper aims through its scope.
+- **Sniper:** 95 body damage (no longer one-shots everything), headshots ×3, passes through one target, 1.2s between shots.
+- **Paint:** every shot splashes paint in a random color from the gun you're holding: on the wall it hits, or on the wall behind a doodle it hits. Up to 400 splats stay until the run/round ends; in versus you see others' paint too.
+- **Killstreaks:** 3 kills in a row → **minigun** (200 rounds, spins up), 5 → **railgun** (6 shots that pierce every target in line). They vanish when empty. The streak resets when you take damage (solo) or die (versus).
+
 ## Difficulty (solo)
 Easy / normal / hard in the menu (`src/game/difficulty.ts`). It scales enemy HP, enemy damage, fire rate, bullet speed, wave size and how many are alive at once. Score is multiplied by 0.5 / 1 / 1.5 so easy runs don't top the leaderboard; the server's score ceiling allows for the 1.5× (`supabase/migrations/20261014200000_difficulty_score_ceiling.sql`).
 
