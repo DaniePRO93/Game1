@@ -2,10 +2,13 @@
   --ink: #2a2e85;
   --ink-soft: rgba(42, 46, 133, 0.55);
   --red: #c0302a;
+  --yellow: #ffd60a;
+  --orange: #ff8a1f;
   --paper: #f7f4ec;
   --rule: rgba(120, 150, 210, 0.32);
   --margin: rgba(230, 120, 120, 0.55);
   --font: 'Patrick Hand', 'Comic Sans MS', 'Chalkboard SE', cursive;
+  --marker: 'Permanent Marker', 'Patrick Hand', cursive;
 }
 
 * {
@@ -34,17 +37,37 @@ a {
   color: inherit;
 }
 
+b {
+  font-weight: normal;
+  color: var(--red);
+}
+
+kbd {
+  font-family: var(--font);
+  font-size: 0.85em;
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 6px;
+  text-align: center;
+  border: 2px solid var(--ink);
+  border-bottom-width: 4px;
+  border-radius: 6px 4px 7px 5px;
+  background: #fffdf8;
+  line-height: 1.35;
+}
+
 /* ── Header ─────────────────────────────────────── */
 .top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 14px 32px 14px 80px;
-  max-width: 1200px;
+  max-width: 1240px;
   margin: 0 auto;
 }
 .logo {
-  font-size: 34px;
+  font-family: var(--marker);
+  font-size: 30px;
   text-decoration: none;
   transform: rotate(-2deg);
   display: inline-block;
@@ -89,10 +112,14 @@ button:active {
 }
 .btn.big {
   font-size: 30px;
-  padding: 10px 26px;
-  color: var(--red);
-  border-color: var(--red);
-  box-shadow: 4px 5px 0 rgba(192, 48, 42, 0.3);
+  padding: 12px 28px;
+  color: #fff;
+  background: var(--red);
+  border-color: #8f1f1a;
+  box-shadow: 5px 6px 0 rgba(42, 46, 133, 0.3);
+}
+.btn.big:hover {
+  transform: rotate(-1.5deg) translateY(-3px) scale(1.02);
 }
 .btn.small {
   font-size: 19px;
@@ -103,62 +130,72 @@ button:active {
 .note-small {
   font-size: 17px;
   opacity: 0.75;
+  margin: 10px 0 0;
 }
 
-/* ── Hero ───────────────────────────────────────── */
 main {
-  max-width: 1200px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 0 32px 0 80px;
 }
+
+/* ── Hero ───────────────────────────────────────── */
 .hero {
+  position: relative;
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 40px;
+  grid-template-columns: 1fr 1.05fr;
+  gap: 56px;
   align-items: center;
-  padding: 36px 0 60px;
+  padding: 30px 0 80px;
+}
+.kicker {
+  margin: 0 0 6px;
+  font-size: 22px;
+  color: var(--red);
+  transform: rotate(-1deg);
 }
 h1 {
-  position: relative;
-  margin: 0 0 18px;
+  margin: 0 0 20px;
+  font-family: var(--marker);
   font-weight: normal;
-  font-size: clamp(48px, 7vw, 92px);
-  line-height: 1;
+  font-size: clamp(40px, 4.2vw, 62px);
+  line-height: 1.1;
 }
-.scribble-title {
+h1 .line {
   display: block;
+}
+@media (min-width: 961px) {
+  h1 .line {
+    white-space: nowrap;
+  }
+}
+h1 .line:first-child {
   transform: rotate(-1.5deg);
 }
-.scribble-title.red {
+h1 .red {
   color: var(--red);
-  margin-top: 8px;
+  margin-top: 6px;
   transform: rotate(1deg);
 }
-.underline {
-  display: block;
-  width: min(420px, 80%);
-  height: 24px;
-  margin-top: 6px;
+/* Yellow highlighter swipe that draws in. */
+.hl {
+  background-image: linear-gradient(transparent 58%, rgba(255, 214, 10, 0.75) 58%, rgba(255, 214, 10, 0.75) 92%, transparent 92%);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  animation: swipe 0.8s 0.5s ease-out both;
+  padding: 0 4px;
+  margin: 0 -4px;
 }
-.underline path {
-  fill: none;
-  stroke: var(--red);
-  stroke-width: 5;
-  stroke-linecap: round;
-  stroke-dasharray: 420;
-  stroke-dashoffset: 420;
-  animation: draw 1.1s 0.4s ease-out forwards;
-}
-@keyframes draw {
-  to {
-    stroke-dashoffset: 0;
+@keyframes swipe {
+  from {
+    background-size: 0% 100%;
   }
 }
 .lede {
-  font-size: 24px;
+  font-size: 23px;
   line-height: 32px;
-  max-width: 560px;
-  margin: 0 0 26px;
+  max-width: 520px;
+  margin: 0 0 28px;
 }
 .cta-row {
   display: flex;
@@ -167,25 +204,199 @@ h1 {
   flex-wrap: wrap;
 }
 
-.hero-pad {
+/* Video in a taped sketchbook frame with handwritten callouts. */
+.hero-video {
+  position: relative;
+  margin: 0;
+  transform: rotate(1.2deg);
+}
+.hero-video .frame {
+  background: #fff;
+  padding: 12px;
+  border: 2.5px solid var(--ink);
+  border-radius: 4px 8px 5px 10px;
+  box-shadow: 9px 10px 0 rgba(42, 46, 133, 0.22);
+}
+.hero-video video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: var(--paper);
+}
+.tape {
+  position: absolute;
+  width: 110px;
+  height: 28px;
+  background: rgba(240, 220, 150, 0.8);
+  border-left: 2px dashed rgba(180, 150, 80, 0.4);
+  border-right: 2px dashed rgba(180, 150, 80, 0.4);
+}
+.tape.t1 {
+  top: -14px;
+  left: 18px;
+  transform: rotate(-8deg);
+}
+.tape.t2 {
+  bottom: -12px;
+  right: 22px;
+  transform: rotate(-6deg);
+}
+.callout {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 24px;
+  color: var(--red);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.callout svg {
+  width: 70px;
+  height: 44px;
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.callout.c1 {
+  top: -52px;
+  left: 20%;
+  flex-direction: row-reverse;
+  transform: rotate(-4deg);
+}
+.callout.c1 svg {
+  transform: scaleX(-1) rotate(-10deg);
+}
+/* Bottom-right, under the frame: stays inside the page at any width. */
+.callout.c2 {
+  bottom: -60px;
+  right: 4%;
+  transform: rotate(3deg);
+}
+.callout.c2 svg {
+  transform: scaleY(-1) rotate(8deg);
+}
+.callout.c3 {
+  bottom: -58px;
+  left: 4%;
+  transform: rotate(-3deg);
+}
+
+.margin-doodle {
+  position: absolute;
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.margin-doodle.star {
+  width: 44px;
+  height: 44px;
+  stroke: var(--orange);
+}
+.margin-doodle.spiral {
+  width: 46px;
+  height: 46px;
+}
+.s1 {
+  top: 6px;
+  left: -60px;
+  transform: rotate(-12deg);
+}
+.s2 {
+  bottom: 30px;
+  left: 42%;
+}
+
+/* ── Story steps ────────────────────────────────── */
+.story {
+  padding: 10px 0 40px;
+}
+.step {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 56px;
+  align-items: center;
+  padding: 40px 0 70px;
+  position: relative;
+}
+.step + .step::before {
+  /* Hand-drawn squiggle divider. */
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 30%;
+  width: 40%;
+  height: 20px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 20' preserveAspectRatio='none'%3E%3Cpath d='M2 10 C 30 0, 50 20, 80 10 S 130 0, 160 10 S 210 20, 240 10 S 290 0, 320 10 S 370 20, 398 10' fill='none' stroke='%232a2e85' stroke-opacity='.45' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E")
+    center / 100% 100% no-repeat;
+}
+.step-num {
+  font-family: var(--marker);
+  display: inline-grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  font-size: 30px;
+  color: #fff;
+  background: var(--red);
+  border-radius: 50% 46% 52% 48%;
+  transform: rotate(-8deg);
+  box-shadow: 3px 3px 0 rgba(42, 46, 133, 0.3);
+}
+.step h2 {
+  font-family: var(--marker);
+  font-weight: normal;
+  font-size: 54px;
+  line-height: 1;
+  margin: 12px 0 14px;
+}
+.step p {
+  font-size: 22px;
+  line-height: 30px;
+  margin: 0 0 14px;
+  max-width: 520px;
+}
+.step .aside {
+  color: var(--red);
+  font-size: 19px;
+}
+.scribble-list {
+  margin: 0 0 22px;
+  padding: 0;
+  list-style: none;
+  font-size: 21px;
+}
+.scribble-list li::before {
+  content: '✎ ';
+  color: var(--red);
+}
+
+.pad-card {
+  justify-self: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.6);
   border: 2.5px solid var(--ink);
   border-radius: 6px 12px 5px 14px;
-  padding: 16px 18px 14px;
-  box-shadow: 7px 8px 0 rgba(42, 46, 133, 0.2);
-  transform: rotate(1.2deg);
+  padding: 16px 20px 14px;
+  box-shadow: 8px 9px 0 rgba(42, 46, 133, 0.2);
+  transform: rotate(-1.4deg);
 }
 .pad-label {
-  font-size: 20px;
+  font-size: 21px;
   color: var(--red);
 }
 #pad {
   position: relative;
-  width: min(300px, 70vw);
+  width: min(320px, 72vw);
   aspect-ratio: 480 / 600;
   border: 2px dashed var(--ink-soft);
   border-radius: 4px;
@@ -216,31 +427,24 @@ h1 {
   opacity: 0.7;
 }
 
-/* ── Photos (taped screenshots) ─────────────────── */
-.gallery {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 32px;
-  padding: 10px 0 70px;
-}
+/* ── Photos ─────────────────────────────────────── */
 .photo {
   position: relative;
   margin: 0;
   background: #fff;
-  padding: 10px 10px 4px;
-  box-shadow: 4px 6px 0 rgba(42, 46, 133, 0.18);
+  padding: 10px 10px 6px;
+  box-shadow: 6px 8px 0 rgba(42, 46, 133, 0.18);
   border: 1.5px solid rgba(42, 46, 133, 0.25);
 }
 .photo::before {
-  /* Masking tape. */
   content: '';
   position: absolute;
-  top: -12px;
+  top: -13px;
   left: 50%;
-  width: 90px;
-  height: 24px;
+  width: 100px;
+  height: 26px;
   transform: translateX(-50%) rotate(-3deg);
-  background: rgba(240, 220, 150, 0.75);
+  background: rgba(240, 220, 150, 0.8);
   border-left: 2px dashed rgba(180, 150, 80, 0.4);
   border-right: 2px dashed rgba(180, 150, 80, 0.4);
 }
@@ -253,8 +457,8 @@ h1 {
 }
 .photo figcaption {
   text-align: center;
-  font-size: 18px;
-  padding: 4px 0;
+  font-size: 19px;
+  padding: 6px 0 2px;
 }
 .tilt-l {
   transform: rotate(-1.6deg);
@@ -263,95 +467,223 @@ h1 {
   transform: rotate(1.4deg);
 }
 
-/* ── Features (sticky notes) ────────────────────── */
-h2 {
+/* ── Features ───────────────────────────────────── */
+.section-title {
+  font-family: var(--marker);
   font-weight: normal;
-  font-size: 48px;
-  line-height: 1.1;
-  margin: 0 0 26px;
-  transform: rotate(-1deg);
-  display: inline-block;
-  border-bottom: 3px solid var(--red);
+  font-size: 44px;
+  line-height: 1.15;
+  margin: 0;
+  /* Inline + clone so the highlighter follows each wrapped line. */
+  display: inline;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  padding: 0 6px;
+  background-image: linear-gradient(transparent 70%, rgba(255, 214, 10, 0.6) 70%, rgba(255, 214, 10, 0.6) 94%, transparent 94%);
+}
+.section-title + * {
+  margin-top: 30px !important;
 }
 .features {
-  padding: 10px 0 70px;
+  padding: 40px 0 80px;
 }
 .notes {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 26px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px 28px;
 }
 .note {
   background: hsl(var(--h), 85%, 82%);
-  padding: 16px 16px 14px;
-  min-height: 210px;
-  box-shadow: 4px 6px 0 rgba(42, 46, 133, 0.22);
+  padding: 18px 18px 16px;
+  box-shadow: 5px 7px 0 rgba(42, 46, 133, 0.22);
   border-radius: 2px;
 }
-.note:nth-child(4n + 1) {
-  transform: rotate(-2deg);
+.note:nth-child(3n + 1) {
+  transform: rotate(-1.8deg);
 }
-.note:nth-child(4n + 2) {
-  transform: rotate(1.4deg);
+.note:nth-child(3n + 2) {
+  transform: rotate(1.2deg);
 }
-.note:nth-child(4n + 3) {
-  transform: rotate(-0.8deg);
+.note:nth-child(3n) {
+  transform: rotate(-0.6deg);
 }
-.note:nth-child(4n) {
-  transform: rotate(2deg);
+.note .icon {
+  width: 46px;
+  height: 46px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  float: right;
+  margin: -4px -4px 4px 8px;
+}
+.note .icon text {
+  font-family: var(--font);
+  font-size: 13px;
+  fill: var(--ink);
+  stroke: none;
 }
 .note h3 {
+  font-family: var(--marker);
   font-weight: normal;
-  font-size: 27px;
-  line-height: 1.05;
+  font-size: 24px;
+  line-height: 1.15;
   margin: 0 0 10px;
 }
 .note p {
   margin: 0;
-  font-size: 19px;
-  line-height: 24px;
+  font-size: 20px;
+  line-height: 26px;
+}
+.note kbd {
+  font-size: 0.8em;
 }
 
-.sword-strip {
+/* ── Challenge + weapons ────────────────────────── */
+.duo {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 36px;
-  padding: 0 0 70px;
+  gap: 56px;
+  align-items: center;
+  padding: 10px 0 90px;
 }
-
-/* ── How to play ────────────────────────────────── */
-.how {
-  padding: 0 0 60px;
+.challenge p {
+  font-size: 22px;
+  max-width: 480px;
+  margin: 0 0 24px;
 }
-.controls {
-  border-collapse: collapse;
+.challenge-card {
+  position: relative;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  max-width: 440px;
+  padding: 18px 22px;
+  background: #fff;
+  border: 2.5px dashed var(--ink);
+  border-radius: 10px 4px 12px 6px;
+  box-shadow: 6px 7px 0 rgba(42, 46, 133, 0.18);
+  transform: rotate(-1.2deg);
+}
+.stamp {
+  position: absolute;
+  top: -16px;
+  right: -14px;
+  font-family: var(--marker);
+  font-size: 18px;
+  color: var(--red);
+  border: 3px solid var(--red);
+  border-radius: 6px;
+  padding: 0 8px;
+  background: var(--paper);
+  transform: rotate(10deg);
+}
+.mini-doodle {
+  width: 64px;
+  height: 96px;
+  flex: none;
+  fill: #fffdf8;
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cc-line {
   font-size: 22px;
 }
-.controls th {
-  font-weight: normal;
+.cc-score {
+  font-family: var(--marker);
+  font-size: 30px;
+  line-height: 1.2;
   color: var(--red);
-  text-align: left;
-  padding: 0 28px 0 0;
-  white-space: nowrap;
-  height: 30px;
 }
-.controls td {
-  height: 30px;
+.cc-cta {
+  font-size: 18px;
+  opacity: 0.8;
+}
+
+/* ── Controls (doodled keycaps) ─────────────────── */
+.how {
+  padding: 0 0 70px;
+}
+.keys {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 40px;
+  max-width: 980px;
+}
+.key-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 21px;
+}
+.keycaps {
+  display: inline-flex;
+  gap: 5px;
+  flex: none;
+}
+.keycaps kbd {
+  font-size: 18px;
+  min-width: 34px;
+  padding: 2px 8px;
+}
+.keycaps kbd.wide {
+  min-width: 70px;
 }
 
 /* ── Final CTA ──────────────────────────────────── */
 .final {
+  position: relative;
   text-align: center;
-  padding: 20px 0 80px;
+  padding: 30px 0 140px;
+  overflow: hidden;
 }
 .final h2 {
-  font-size: 64px;
-  border: none;
-  display: block;
-  margin-bottom: 26px;
+  font-family: var(--marker);
+  font-weight: normal;
+  font-size: 72px;
+  line-height: 1;
+  margin: 0 0 30px;
+  transform: rotate(-1.5deg);
 }
 .mobile-only {
   display: none;
+}
+.walker {
+  position: absolute;
+  bottom: 12px;
+  left: 0;
+  width: 54px;
+  height: 80px;
+  animation: walk 16s linear infinite;
+}
+.walker svg {
+  width: 100%;
+  height: 100%;
+  fill: #fffdf8;
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: bob 0.5s ease-in-out infinite alternate;
+}
+@keyframes walk {
+  from {
+    transform: translateX(-80px);
+  }
+  to {
+    transform: translateX(calc(100vw + 80px));
+  }
+}
+@keyframes bob {
+  from {
+    transform: translateY(0) rotate(-4deg);
+  }
+  to {
+    transform: translateY(-4px) rotate(4deg);
+  }
 }
 
 footer {
@@ -361,26 +693,34 @@ footer {
   padding: 0 0 30px;
 }
 
-/* ── Scroll reveal ──────────────────────────────── */
-/* Only hidden once landing.ts has armed the observer (html.reveal), so the
-   content is always visible without JS or to non-scrolling renderers. */
+/* ── Scroll reveal (only when landing.ts arms it) ─ */
 @media (prefers-reduced-motion: no-preference) {
   .reveal .note,
-  .reveal .photo {
+  .reveal .photo,
+  .reveal .step-text,
+  .reveal .challenge-card {
     transition:
-      opacity 0.5s ease-out,
-      translate 0.5s ease-out;
+      opacity 0.55s ease-out,
+      translate 0.55s ease-out;
   }
   .reveal .note:not(.in),
-  .reveal .photo:not(.in) {
+  .reveal .photo:not(.in),
+  .reveal .step-text:not(.in),
+  .reveal .challenge-card:not(.in) {
     opacity: 0;
-    translate: 0 18px;
+    translate: 0 22px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .underline path {
+  .hl {
     animation: none;
-    stroke-dashoffset: 0;
+  }
+  .walker,
+  .walker svg {
+    animation: none;
+  }
+  .walker {
+    left: 50%;
   }
   html {
     scroll-behavior: auto;
@@ -389,17 +729,26 @@ footer {
 
 /* ── Responsive ─────────────────────────────────── */
 @media (max-width: 960px) {
-  .hero {
+  .hero,
+  .step,
+  .duo {
     grid-template-columns: 1fr;
+    gap: 40px;
   }
-  .gallery {
-    grid-template-columns: 1fr;
+  .hero {
+    padding-bottom: 80px;
+  }
+  .step-fight .photo {
+    order: 2;
   }
   .notes {
     grid-template-columns: repeat(2, 1fr);
   }
-  .sword-strip {
+  .keys {
     grid-template-columns: 1fr;
+  }
+  .margin-doodle {
+    display: none;
   }
 }
 @media (max-width: 600px) {
@@ -420,16 +769,36 @@ footer {
   .notes {
     grid-template-columns: 1fr;
   }
-  .controls {
+  .callout {
     font-size: 19px;
   }
-  .controls th {
-    padding-right: 14px;
+  .callout.c1 {
+    top: -44px;
+  }
+  .callout.c3 {
+    bottom: -50px;
+  }
+  .callout.c2 {
+    display: none;
+  }
+  .step h2 {
+    font-size: 44px;
+  }
+  .section-title {
+    font-size: 34px;
+  }
+  .final h2 {
+    font-size: 52px;
   }
   .mobile-only {
     display: block;
   }
   .btn.big {
-    font-size: 25px;
+    font-size: 24px;
+    padding: 10px 20px;
+  }
+  .key-row {
+    flex-wrap: wrap;
+    gap: 6px 12px;
   }
 }

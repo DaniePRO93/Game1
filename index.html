@@ -5,143 +5,218 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pen Strike: draw your enemy, then erase it</title>
     <meta name="description" content="A free browser FPS drawn entirely in ballpoint pen. Doodle your enemy, then fight waves of it with slow-mo, slides and an eraser sword." />
-    <meta property="og:title" content="Pen Strike" />
-    <meta property="og:description" content="Draw your enemy. Then erase it. A free browser FPS drawn in ballpoint pen." />
-    <meta property="og:image" content="/img/pen.webp" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Pen Strike: draw your enemy, then erase it" />
+    <meta property="og:description" content="A free browser FPS drawn entirely in ballpoint pen. Doodle a monster, then fight waves of it." />
+    <meta property="og:image" content="/img/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="/img/og.jpg" />
     <meta name="theme-color" content="#f7f4ec" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26 L22 6 L26 10 L10 30 Z' fill='%23f7f4ec' stroke='%232a2e85' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M6 26 L4 31 L10 30' fill='%232a2e85'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Permanent+Marker&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/src/landing/landing.css" />
   </head>
   <body>
+    <!-- Reusable hand-drawn bits. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="star" viewBox="0 0 40 40"><path d="M20 3 L24 15 L37 15 L27 23 L31 36 L20 28 L9 36 L13 23 L3 15 L16 15 Z" /></symbol>
+        <symbol id="spiral" viewBox="0 0 40 40"><path d="M20 20 m0 -2 a2 2 0 1 1 -2 2 a5 5 0 0 1 5 -5 a8 8 0 0 1 8 8 a11 11 0 0 1 -11 11 a14 14 0 0 1 -14 -14 a17 17 0 0 1 17 -17" /></symbol>
+        <symbol id="doodle" viewBox="0 0 60 90">
+          <circle cx="30" cy="20" r="14" />
+          <path d="M19 9 l4 -6 l4 6 l4 -6 l4 6 l4 -6 l3 7" />
+          <path d="M22 16 l6 3 M38 16 l-6 3 M24 29 q6 -4 12 0" />
+          <path d="M20 36 q-3 18 0 30 h20 q3 -12 0 -30 z" />
+          <path d="M20 42 l-12 14 M40 42 l12 -8" />
+          <path class="leg-a" d="M25 66 l-3 20" />
+          <path class="leg-b" d="M35 66 l3 20" />
+        </symbol>
+      </defs>
+    </svg>
+
     <header class="top">
       <a class="logo" href="/">Pen Strike</a>
       <nav>
+        <a href="#draw">try it</a>
         <a href="#features">features</a>
-        <a href="#how">how to play</a>
+        <a href="#how">controls</a>
         <a class="btn small" href="/play/">play</a>
       </nav>
     </header>
 
     <main>
+      <!-- ── Hero ─────────────────────────────────────────────────────── -->
       <section class="hero">
         <div class="hero-copy">
+          <p class="kicker">a free browser shooter</p>
           <h1>
-            <span class="scribble-title">Draw your enemy.</span>
-            <span class="scribble-title red">Then erase it.</span>
-            <svg class="underline" viewBox="0 0 400 24" preserveAspectRatio="none" aria-hidden="true">
-              <path d="M4 16 C 80 6, 160 22, 230 12 S 360 6, 396 14" />
-            </svg>
+            <span class="line">Draw your enemy.</span>
+            <span class="line red">Then <span class="hl">erase</span> it.</span>
           </h1>
           <p class="lede">
-            A free browser shooter drawn entirely in ballpoint pen. Doodle a monster, then fight waves of it.
-            You get slow-motion, slides and double jumps, and a giant eraser sword.
+            Every frame is ballpoint pen on notebook paper. Doodle a monster, then fight waves of it with
+            <b>slow-mo</b>, <b>slides</b>, <b>double jumps</b> and a giant <b>eraser sword</b>.
           </p>
           <div class="cta-row">
             <a class="btn big" href="/play/">Play free in your browser →</a>
-            <span class="note-small">desktop · mouse &amp; keyboard · no install</span>
+          </div>
+          <p class="note-small">desktop · mouse &amp; keyboard · no install, no account</p>
+        </div>
+
+        <figure class="hero-video">
+          <div class="frame">
+            <video id="hero-video" autoplay muted loop playsinline preload="auto" poster="/img/hero-poster.webp" aria-label="Gameplay: shooting doodled enemies, slow motion, an eraser sword kill, then color mode">
+              <source src="/img/hero.mp4" type="video/mp4" />
+              <source src="/img/hero.webm" type="video/webm" />
+            </video>
+          </div>
+          <span class="tape t1"></span><span class="tape t2"></span>
+          <div class="callout c1"><svg viewBox="0 0 80 50" aria-hidden="true"><path d="M4 8 C 30 4, 60 14, 72 40 M60 34 l12 6 l2 -13" /></svg><span>slow-mo!</span></div>
+          <div class="callout c2"><span>eraser sword</span><svg viewBox="0 0 80 50" aria-hidden="true"><path d="M76 6 C 50 2, 20 14, 8 40 M20 34 l-12 6 l-2 -13" /></svg></div>
+          <div class="callout c3"><svg viewBox="0 0 70 40" aria-hidden="true"><path d="M6 34 C 20 10, 44 6, 64 10 M52 2 l12 8 l-10 10" /></svg><span>…and color mode</span></div>
+        </figure>
+        <svg class="margin-doodle star s1" aria-hidden="true"><use href="#star" /></svg>
+        <svg class="margin-doodle spiral s2" aria-hidden="true"><use href="#spiral" /></svg>
+      </section>
+
+      <!-- ── Story: draw → fight → erase ──────────────────────────────── -->
+      <section id="draw" class="story">
+        <div class="step step-draw">
+          <div class="step-text">
+            <span class="step-num">1</span>
+            <h2>draw it</h2>
+            <p>Sketch anything. Whatever you draw becomes the horde, and its shape sets the stats:</p>
+            <ul class="scribble-list">
+              <li><b>big &amp; filled-in</b> → a slow, tanky blob</li>
+              <li><b>thin stick figure</b> → fast but fragile</li>
+              <li><b>top quarter</b> → the headshot zone</li>
+            </ul>
+            <a class="btn" id="pad-fight" href="/play/">fight this doodle →</a>
+          </div>
+          <div class="pad-card">
+            <div class="pad-label">go on, draw here ↓</div>
+            <div id="pad"></div>
+            <div class="pad-buttons">
+              <button id="pad-undo">undo</button>
+              <button id="pad-clear">clear</button>
+              <button id="pad-example">example</button>
+            </div>
+            <p class="pad-hint">your drawing carries over into the game</p>
           </div>
         </div>
 
-        <div class="hero-pad">
-          <div class="pad-label">try it: doodle your enemy here ↓</div>
-          <div id="pad"></div>
-          <div class="pad-buttons">
-            <button id="pad-undo">undo</button>
-            <button id="pad-clear">clear</button>
-            <button id="pad-example">example</button>
+        <div class="step step-fight">
+          <figure class="photo tilt-l">
+            <img src="/img/color.webp" alt="Color mode: doodled enemies in a construction site with a grey building, a yellow crane and blue sky" loading="lazy" width="1280" height="720" />
+          </figure>
+          <div class="step-text">
+            <span class="step-num">2</span>
+            <h2>fight it</h2>
+            <p>
+              Your doodles storm a sketchbook construction site and shoot slow red ink at you. Hold <kbd>Shift</kbd>
+              to slow time and dodge. Kills refill the bar.
+            </p>
+            <p class="aside">→ prefer pen-only? color mode is a toggle.</p>
           </div>
-          <a class="btn" id="pad-fight" href="/play/">fight this doodle →</a>
-          <p class="pad-hint">your drawing carries over into the game</p>
+        </div>
+
+        <div class="step step-erase">
+          <div class="step-text">
+            <span class="step-num">3</span>
+            <h2>erase it</h2>
+            <p>
+              Every 5th wave, <b>The Doodler</b> arrives: a giant version of whatever horror you drew on the boss page.
+              Rub it out with the eraser sword, or tear it to paper shreds.
+            </p>
+          </div>
+          <figure class="photo tilt-r">
+            <img src="/img/boss.webp" alt="The Doodler boss, a horned blob monster drawn in pen, during slow motion" loading="lazy" width="1280" height="720" />
+          </figure>
         </div>
       </section>
 
-      <section class="gallery" aria-label="Screenshots">
-        <figure class="photo tilt-l">
-          <img src="/img/pen.webp" alt="First-person view of the pen-drawn construction site with doodled enemies firing red ink bullets" loading="lazy" />
-          <figcaption>every frame is pen on notebook paper</figcaption>
-        </figure>
-        <figure class="photo tilt-r">
-          <img src="/img/color.webp" alt="Color mode: grey concrete building, yellow crane and blue sky, still drawn in pen" loading="lazy" />
-          <figcaption>…or flip on color mode</figcaption>
-        </figure>
-        <figure class="photo tilt-l">
-          <img src="/img/boss.webp" alt="The Doodler boss, a giant version of your drawing, during slow motion" loading="lazy" />
-          <figcaption>The Doodler: a boss you draw yourself</figcaption>
-        </figure>
-      </section>
-
+      <!-- ── Features ─────────────────────────────────────────────────── -->
       <section id="features" class="features">
-        <h2>what's in the notebook</h2>
+        <h2 class="section-title">what's in the notebook</h2>
         <div class="notes">
-          <article class="note" style="--h: 48">
-            <h3>Your doodle, your enemy</h3>
-            <p>Whatever you draw becomes the horde. Big, filled-in blobs are slow tanks. Thin stick figures are fast but fragile. The top quarter of the drawing is the headshot zone.</p>
-          </article>
           <article class="note" style="--h: 200">
+            <svg class="icon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="26" r="16" /><path d="M24 26 V16 M24 26 l7 5 M18 4 h12 M24 4 v6" /></svg>
             <h3>5 seconds of slow-mo</h3>
-            <p>Hold Shift to slow the world to a crawl and dodge the ink bullets. The bar only refills when you erase enemies.</p>
+            <p>Slow the world to a crawl and weave through ink bullets. Only kills refill it.</p>
           </article>
           <article class="note" style="--h: 330">
+            <svg class="icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M8 40 L30 8 L40 15 L18 46 Z M8 40 l-3 6 l13 0 M26 14 l10 7" /></svg>
             <h3>Eraser sword</h3>
-            <p>A giant pencil with a pink eraser blade. Lunge in and rub enemies out from the top down.</p>
+            <p>A giant pencil with a pink blade. Lunge in and rub doodles out from the top down.</p>
           </article>
-          <article class="note" style="--h: 60">
+          <article class="note" style="--h: 55">
+            <svg class="icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M10 34 h22 q8 0 8 -6 l-6 -2 l-4 -8 h-8 l-2 6 l-10 4 z M2 22 h8 M4 28 h6 M2 34 h4" /></svg>
             <h3>Slide &amp; double jump</h3>
-            <p>Slide with C, jump out of it to keep your speed, then flick a second jump in mid-air.</p>
+            <p>Slide with <kbd>C</kbd>, jump out of it to keep your speed, flick a second jump mid-air.</p>
           </article>
           <article class="note" style="--h: 270">
+            <svg class="icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M8 8 h32 v26 l-8 8 h-24 z M32 42 v-8 h8" /><use href="#star" x="15" y="14" width="18" height="18" /></svg>
             <h3>Sticky-note upgrades</h3>
-            <p>Pick an upgrade after every wave: ricochet shots, ink bombs, a sword that swats bullets, extra jumps, and more.</p>
+            <p>Pick one after every wave: ricochet shots, ink bombs, bullet-swatting swords, extra jumps…</p>
           </article>
           <article class="note" style="--h: 0">
+            <svg class="icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M6 40 L14 12 L24 28 L34 12 L42 40 Z" /><text x="24" y="38" text-anchor="middle">×5</text></svg>
             <h3>Combos &amp; the clock</h3>
-            <p>Chain kills for up to ×5 score. Beat the wave clock for bonus points and a 4th upgrade choice.</p>
+            <p>Chain kills for up to ×5 score. Beat the wave clock for bonus points and a 4th upgrade.</p>
           </article>
           <article class="note" style="--h: 140">
+            <svg class="icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M10 18 l-4 -12 l12 8 M38 18 l4 -12 l-12 8" /><circle cx="24" cy="28" r="16" /><path d="M16 34 l3 -3 l3 3 l3 -3 l3 3 l3 -3 M17 22 l5 2 M31 22 l-5 2" /></svg>
             <h3>Draw the boss too</h3>
-            <p>Every 5th wave, The Doodler shows up as whatever horror you sketched on the boss page.</p>
-          </article>
-          <article class="note" style="--h: 25">
-            <h3>Share a challenge</h3>
-            <p>Send a friend a link with your doodles and your score. They fight your monsters and try to beat it.</p>
+            <p>A second page for The Doodler. Make it as horrible as you like.</p>
           </article>
         </div>
       </section>
 
-      <section class="sword-strip">
-        <figure class="photo wide tilt-r">
-          <img src="/img/upgrade.webp" alt="The upgrade screen: four colorful sticky notes to pick from between waves" loading="lazy" />
-          <figcaption>pick a sticky note between waves</figcaption>
-        </figure>
-        <figure class="photo wide tilt-l">
-          <img src="/img/weapons.webp" alt="The colorful weapons: shotgun, pistol, sniper and the eraser sword" loading="lazy" />
+      <!-- ── Challenge + weapons ──────────────────────────────────────── -->
+      <section class="duo">
+        <div class="challenge">
+          <h2 class="section-title">send a friend your monster</h2>
+          <p>Share a link with your doodles and your score. They fight <em>your</em> creatures and try to beat it.</p>
+          <div class="challenge-card" aria-label="Example challenge">
+            <span class="stamp">CHALLENGE</span>
+            <svg class="mini-doodle" aria-hidden="true"><use href="#doodle" /></svg>
+            <div>
+              <div class="cc-line">Dani erased <b>38</b> of these</div>
+              <div class="cc-score">4,210 pts · wave 7</div>
+              <div class="cc-cta">think you can beat it? →</div>
+            </div>
+          </div>
+        </div>
+        <figure class="photo tilt-r weapons">
+          <img src="/img/weapons.webp" alt="The colorful weapons: shotgun, pistol, sniper and the eraser sword" loading="lazy" width="1280" height="720" />
           <figcaption>4 guns + 1 very large eraser</figcaption>
         </figure>
       </section>
 
+      <!-- ── Controls ─────────────────────────────────────────────────── -->
       <section id="how" class="how">
-        <h2>how to play</h2>
-        <table class="controls">
-          <tbody>
-            <tr><th>WASD</th><td>move</td></tr>
-            <tr><th>Space</th><td>jump, then press again in the air</td></tr>
-            <tr><th>C</th><td>slide (jump out of it to keep your speed)</td></tr>
-            <tr><th>Mouse</th><td>aim · click to shoot</td></tr>
-            <tr><th>Hold Shift</th><td>slow time (kills refill the bar)</td></tr>
-            <tr><th>1–5 / wheel</th><td>rifle, shotgun, pistol, sniper, eraser sword</td></tr>
-            <tr><th>Right-click</th><td>sniper scope</td></tr>
-            <tr><th>R</th><td>reload</td></tr>
-          </tbody>
-        </table>
+        <h2 class="section-title">controls</h2>
+        <div class="keys">
+          <div class="key-row"><span class="keycaps"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>move</span></div>
+          <div class="key-row"><span class="keycaps"><kbd class="wide">Space</kbd></span><span>jump · again in the air</span></div>
+          <div class="key-row"><span class="keycaps"><kbd>C</kbd></span><span>slide</span></div>
+          <div class="key-row"><span class="keycaps"><kbd class="wide">Shift</kbd></span><span>hold to slow time</span></div>
+          <div class="key-row"><span class="keycaps"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd></span><span>rifle · shotgun · pistol · sniper · eraser sword</span></div>
+          <div class="key-row"><span class="keycaps"><kbd>R</kbd></span><span>reload</span></div>
+          <div class="key-row"><span class="keycaps"><kbd class="wide">click</kbd><kbd class="wide">right-click</kbd></span><span>shoot · sniper scope</span></div>
+        </div>
       </section>
 
+      <!-- ── Final CTA ────────────────────────────────────────────────── -->
       <section class="final">
         <h2>Grab a pen.</h2>
         <a class="btn big" href="/play/">Play Pen Strike →</a>
         <p class="note-small mobile-only">heads up: it plays on a computer with a mouse and keyboard</p>
+        <div class="walker" aria-hidden="true"><svg><use href="#doodle" /></svg></div>
       </section>
     </main>
 

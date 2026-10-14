@@ -280,6 +280,7 @@ if (testMode) {
   Object.assign(window, {
     __game: game,
     __input: input,
+    __postfx: postfx,
     __pad: pad,
     __start: () => startGame(true),
     __pick: pickUpgrade,
