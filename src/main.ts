@@ -5,6 +5,8 @@ import { Sfx } from './game/audio';
 import { doodleStats } from './game/doodleStats';
 import { Doodles, Game } from './game/game';
 import { decodeShare, encodeShare } from './game/share';
+import { currentAccount, initAccount, mountAccountChip, onAccount, requireAccount } from './net/accountUi';
+import { RunResult, peekPendingRun, publishMonster, savePendingRun, submitScore, takePendingRun } from './net/backend';
 import { UPGRADES, Upgrade } from './game/upgrades';
 import { Input } from './game/input';
 import { PostFX } from './render/postfx';
@@ -268,10 +270,81 @@ input.onLockChange = (locked) => {
   else if (!locked && screen === 'playing' && !game.dead) show('paused');
 };
 
+// ── Accounts, leaderboard, gallery ───────────────────────────────────────
+initAccount();
+mountAccountChip($('acct'));
+
+function postRun(run: RunResult): void {
+  const el = $('over-post');
+  el.textContent = 'posting your score…';
+  submitScore(run).then(
+    () => (el.textContent = '✓ posted to the leaderboard'),
+    (err: Error) => (el.textContent = `couldn't post: ${err.message}`),
+  );
+}
+
+// A run finished while signed out comes back after the magic link: post it
+// once the account (with username) is ready.
+if (peekPendingRun()) {
+  onAccount((a) => {
+    if (!a.session || !a.username) return;
+    const run = takePendingRun();
+    if (!run) return;
+    submitScore(run).then(
+      () => hud.hint(`✓ your ${run.score}-point run is on the leaderboard`, 5),
+      (err: Error) => hud.hint(`couldn't post your last run: ${err.message}`, 5),
+    );
+  });
+}
+
+$('btn-publish').onclick = () => {
+  const msg = $('publish-msg');
+  const sheet: Sheet = pad.sheet;
+  if (pad.isEmpty(sheet)) {
+    msg.textContent = 'draw something first!';
+    return;
+  }
+  requireAccount(async () => {
+    msg.textContent = 'publishing…';
+    try {
+      const token = await encodeShare(sheet === 'boss' ? { enemy: [], boss: pad.getStrokes('boss') } : { enemy: pad.getStrokes('enemy'), boss: [] });
+      await publishMonster(sheet, token, $<HTMLInputElement>('monster-name').value);
+      msg.textContent = `✓ your ${sheet} is in the gallery`;
+    } catch (err) {
+      msg.textContent = `couldn't publish: ${(err as Error).message}`;
+    }
+  }, 'to publish monsters to the gallery');
+};
+
 game.onDeath = () => {
   input.unlock();
   $('over-share').style.display = 'none';
   $('over-stats').textContent = `wave ${game.wave} · ${game.kills} kills · best combo ×${game.combo.best} · score ${game.score}`;
+  const run: RunResult = {
+    score: game.score,
+    wave: game.wave,
+    kills: game.kills,
+    bestCombo: game.combo.best,
+    durationS: game.runSeconds,
+    colorMode: colorToggle.checked,
+  };
+  const post = $('over-post');
+  post.innerHTML = '';
+  const acct = currentAccount();
+  if (acct.session && acct.username) {
+    postRun(run);
+  } else if (game.score > 0) {
+    const b = document.createElement('button');
+    b.textContent = 'sign in to post this score';
+    b.onclick = () => {
+      savePendingRun(run);
+      requireAccount(() => {
+        takePendingRun();
+        postRun(run);
+      }, 'to put this score on the leaderboard');
+    };
+    post.append(b);
+  }
   show('over');
 };
 

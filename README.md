@@ -54,3 +54,15 @@ One-time setup for **penstrike.paycoach.app**:
 2. At the DNS provider for `paycoach.app`, add a **CNAME** record: name `penstrike`, value `daniepro93.github.io`. On Cloudflare, set it to *DNS only* (grey cloud).
 3. GitHub → **Settings → Pages → Custom domain**: `penstrike.paycoach.app`, Save. Once the certificate is issued (minutes to an hour), tick **Enforce HTTPS**.
 4. Re-run the **Deploy site** workflow (Actions tab), or push any commit.
+
+## Accounts, leaderboard & monster gallery (Supabase)
+- Project: **penstrike** (`lyzktwgegfujkyilpfev`, PROFITLEAK org). The schema and security rules live in `supabase/migrations/`.
+- Client: `src/net/backend.ts` (API) and `src/net/accountUi.ts` (sign-in chip and dialog, shared by the landing page and the game).
+- **Guest play always works.** Signing in (email magic link, no password) is only needed to post scores and publish or report monsters.
+- **Leaderboard** shows each player's best run. The server rejects implausible runs (score vs. kills/wave, wave vs. run time) and limits posts to one every 20 s. That stops casual cheating, but it isn't cheat-proof, because the game runs in the browser.
+- **Gallery** monsters appear immediately. 3 reports from different players hide one. To review: Supabase → Table Editor → `monsters`, set `hidden` back to `false` to restore, or delete the row.
+
+One-time Supabase dashboard setup (needed for sign-in links to work):
+1. **Authentication → URL Configuration → Site URL**: your live domain, e.g. `https://penstrike.paycoach.app`.
+2. **Redirect URLs**: add `https://penstrike.paycoach.app/**` and `http://localhost:5173/**`.
+3. Before launch, set up **Authentication → Emails → SMTP** with a real sender (e.g. Resend's free tier). Supabase's built-in sender only allows a few emails per hour.

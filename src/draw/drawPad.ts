@@ -151,10 +151,21 @@ export class DrawPad {
   }
 }
 
-function paint(c: CanvasRenderingContext2D, strokes: Stroke[]): void {
+/** Draw strokes (in pad coordinates) onto a context; `scale` maps the 480×600 pad onto it. */
+export function paintStrokes(c: CanvasRenderingContext2D, strokes: Stroke[], scale = 1, ink = INK): void {
+  c.save();
+  c.setTransform(scale, 0, 0, scale, 0, 0);
+  paint(c, strokes, ink);
+  c.restore();
+}
+
+export const PAD_W = W;
+export const PAD_H = H;
+
+function paint(c: CanvasRenderingContext2D, strokes: Stroke[], ink = INK): void {
   c.clearRect(0, 0, W, H);
-  c.strokeStyle = INK;
-  c.fillStyle = INK;
+  c.strokeStyle = ink;
+  c.fillStyle = ink;
   c.lineWidth = 7;
   c.lineCap = 'round';
   c.lineJoin = 'round';

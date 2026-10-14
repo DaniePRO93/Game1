@@ -3,13 +3,17 @@ import { DrawPad } from '../draw/drawPad';
 // The pad saves to the same localStorage key the game reads, so whatever you
 // doodle here is the enemy when you hit "fight this doodle".
 const host = document.getElementById('pad');
+let pad: DrawPad | null = null;
 if (host) {
-  const pad = new DrawPad(host);
+  pad = new DrawPad(host);
   if (pad.isEmpty('enemy')) pad.example();
-  document.getElementById('pad-undo')!.onclick = () => pad.undo();
-  document.getElementById('pad-clear')!.onclick = () => pad.clear();
-  document.getElementById('pad-example')!.onclick = () => pad.example();
+  document.getElementById('pad-undo')!.onclick = () => pad!.undo();
+  document.getElementById('pad-clear')!.onclick = () => pad!.clear();
+  document.getElementById('pad-example')!.onclick = () => pad!.example();
 }
+
+// Accounts, gallery and leaderboard load separately so the hero isn't delayed.
+void import('./community').then((m) => m.initCommunity(pad));
 
 // Respect reduced motion: keep the poster frame instead of looping video.
 const video = document.getElementById('hero-video') as HTMLVideoElement | null;

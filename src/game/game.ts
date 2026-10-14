@@ -73,6 +73,8 @@ export class Game {
   wave = 0;
   score = 0;
   kills = 0;
+  /** Real seconds played this run (for leaderboard sanity checks). */
+  runSeconds = 0;
   dead = false;
   private queue: EnemyKind[] = [];
   private spawnTimer = 0;
@@ -185,6 +187,7 @@ export class Game {
     this.clock.timeScale = 1;
     this.score = 0;
     this.kills = 0;
+    this.runSeconds = 0;
     this.wave = 0;
     this.dead = false;
     this.deathT = 0;
@@ -214,6 +217,7 @@ export class Game {
       this.updateDeath(realDt);
       return;
     }
+    this.runSeconds += realDt;
     const input = this.input;
     const wantSlow = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
     const slow = this.meter.update(realDt, wantSlow);

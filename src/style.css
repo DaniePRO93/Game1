@@ -640,3 +640,40 @@ button.big {
   font-size: 15px;
   opacity: 0.7;
 }
+
+/* ── Account / leaderboard bits ─────────────────── */
+.menu-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.publish {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 320px;
+}
+#monster-name {
+  flex: 1 1 150px;
+  font-family: var(--font);
+  font-size: 17px;
+  color: var(--ink);
+  padding: 2px 8px;
+  border: 1.5px solid var(--ink-soft);
+  border-radius: 6px;
+  background: #fffdf8;
+}
+#publish-msg,
+#over-post {
+  font-size: 17px;
+  min-height: 0;
+  margin: 0;
+  max-width: 320px;
+}
+#over-post {
+  font-size: 20px;
+}
+#over-post button {
+  font-size: 18px;
+}

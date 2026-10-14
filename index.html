@@ -43,7 +43,9 @@
       <nav>
         <a href="#draw">try it</a>
         <a href="#features">features</a>
-        <a href="#how">controls</a>
+        <a href="#gallery">monsters</a>
+        <a href="#leaderboard">leaderboard</a>
+        <span id="acct"></span>
         <a class="btn small" href="/play/">play</a>
       </nav>
     </header>
@@ -106,6 +108,11 @@
               <button id="pad-example">example</button>
             </div>
             <p class="pad-hint">your drawing carries over into the game</p>
+            <div class="pad-publish">
+              <input id="pad-name" maxlength="40" placeholder="name it (optional)" aria-label="monster name" />
+              <button id="pad-publish">publish to gallery</button>
+            </div>
+            <p id="pad-publish-msg" class="pad-hint" role="status"></p>
           </div>
         </div>
 
@@ -137,6 +144,30 @@
             <img src="/img/boss.webp" alt="The Doodler boss, a horned blob monster drawn in pen, during slow motion" loading="lazy" width="1280" height="720" />
           </figure>
         </div>
+      </section>
+
+      <!-- ── Community: gallery + leaderboard (live from Supabase) ────── -->
+      <section id="gallery" class="gallery">
+        <h2 class="section-title">fresh from other notebooks</h2>
+        <p class="gallery-sub">monsters drawn by other players. click one to fight it.</p>
+        <div id="monster-grid" class="monster-grid" aria-live="polite">
+          <p class="empty">loading monsters…</p>
+        </div>
+      </section>
+
+      <section id="leaderboard" class="board-section">
+        <div class="board">
+          <h2 class="section-title">leaderboard</h2>
+          <ol id="board-list" class="board-list" aria-live="polite">
+            <li class="empty">loading scores…</li>
+          </ol>
+          <p class="board-note">best run per player</p>
+        </div>
+        <aside class="board-side">
+          <p class="stats-line" id="stats-line"></p>
+          <p>Play as a guest anytime. <b>Sign in</b> (just your email, no password) to put your runs on the board and publish your monsters.</p>
+          <a class="btn big" href="/play/">get on the board →</a>
+        </aside>
       </section>
 
       <!-- ── Features ─────────────────────────────────────────────────── -->

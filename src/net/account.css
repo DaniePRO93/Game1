@@ -1,0 +1,127 @@
+/* Shared account chip + dialog (landing and game). Uses the notebook look. */
+.acct-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Patrick Hand', 'Comic Sans MS', cursive;
+  color: #2a2e85;
+}
+.acct-name {
+  font-size: 19px;
+}
+.acct-btn,
+.acct-link,
+.acct-submit,
+.acct-close {
+  font-family: 'Patrick Hand', 'Comic Sans MS', cursive;
+  color: #2a2e85;
+  cursor: pointer;
+}
+.acct-btn {
+  font-size: 18px;
+  padding: 2px 12px;
+  background: #f7f4ec;
+  border: 2px solid #2a2e85;
+  border-radius: 10px 5px 12px 4px;
+  box-shadow: 2px 3px 0 rgba(42, 46, 133, 0.25);
+}
+.acct-link {
+  font-size: 16px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  text-decoration: underline dashed;
+  opacity: 0.75;
+}
+
+.acct-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(247, 244, 236, 0.75);
+}
+.acct-sheet {
+  position: relative;
+  width: min(420px, 100%);
+  padding: 22px 26px 18px 64px;
+  color: #2a2e85;
+  font-family: 'Patrick Hand', 'Comic Sans MS', cursive;
+  background: #f7f4ec;
+  background-image:
+    linear-gradient(90deg, transparent 44px, rgba(230, 130, 130, 0.6) 44px 46px, transparent 46px),
+    repeating-linear-gradient(transparent 0 29px, rgba(120, 150, 210, 0.35) 29px 30px);
+  border: 2.5px solid #2a2e85;
+  border-radius: 6px 10px 4px 12px;
+  box-shadow: 7px 8px 0 rgba(42, 46, 133, 0.25);
+  transform: rotate(-0.6deg);
+}
+.acct-sheet h3 {
+  margin: 0 0 4px;
+  font-size: 34px;
+  font-weight: normal;
+  font-family: 'Permanent Marker', 'Patrick Hand', cursive;
+}
+.acct-reason {
+  margin: 0 0 12px;
+  font-size: 18px;
+  line-height: 24px;
+}
+.acct-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.acct-input {
+  flex: 1 1 180px;
+  font: 20px 'Patrick Hand', 'Comic Sans MS', cursive;
+  color: #2a2e85;
+  padding: 4px 10px;
+  background: #fffdf8;
+  border: 2px solid #2a2e85;
+  border-radius: 8px 4px 9px 5px;
+}
+.acct-submit {
+  font-size: 20px;
+  padding: 4px 16px;
+  color: #fff;
+  background: #c0302a;
+  border: 2px solid #8f1f1a;
+  border-radius: 10px 5px 12px 4px;
+  box-shadow: 3px 4px 0 rgba(42, 46, 133, 0.25);
+}
+.acct-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.acct-msg {
+  min-height: 24px;
+  margin: 10px 0 0;
+  font-size: 18px;
+  line-height: 24px;
+  color: #c0302a;
+}
+.acct-msg b {
+  font-weight: normal;
+  text-decoration: underline;
+}
+.acct-fine {
+  margin: 6px 0 0;
+  font-size: 15px;
+  line-height: 20px;
+  opacity: 0.7;
+}
+.acct-close {
+  position: absolute;
+  top: 4px;
+  right: 10px;
+  font-size: 30px;
+  line-height: 1;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}

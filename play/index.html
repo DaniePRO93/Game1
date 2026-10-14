@@ -54,7 +54,7 @@
 
     <div id="menu" class="screen">
       <div class="sheet">
-        <h1>Pen Strike</h1>
+        <div class="menu-top"><h1>Pen Strike</h1><div id="acct"></div></div>
         <p class="sub">Draw your enemy. Then shoot it. A lot.</p>
         <div id="challenge" style="display: none"></div>
         <div class="menu-body">
@@ -85,6 +85,11 @@
               <button id="btn-share">share drawings</button>
             </div>
             <div id="share-out" style="display: none"><input id="share-link" readonly /><span id="share-msg"></span></div>
+            <div class="publish">
+              <input id="monster-name" maxlength="40" placeholder="name this monster (optional)" />
+              <button id="btn-publish">publish to gallery</button>
+            </div>
+            <div id="publish-msg"></div>
             <label class="sens"><span>aim sensitivity</span><input id="sens-menu" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
             <ul class="controls">
               <li><b>WASD</b> move · <b>SPACE</b> jump, again in the air</li>
@@ -124,6 +129,7 @@
       <div class="sheet small-sheet">
         <h2>erased.</h2>
         <p id="over-stats"></p>
+        <p id="over-post"></p>
         <button id="btn-again" class="big">again</button>
         <button id="btn-challenge">share as a challenge</button>
         <div id="over-share" style="display: none"><input id="over-link" readonly /><span id="over-msg"></span></div>
