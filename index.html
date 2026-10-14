@@ -3,134 +3,152 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pen Strike</title>
+    <title>Pen Strike: draw your enemy, then erase it</title>
+    <meta name="description" content="A free browser FPS drawn entirely in ballpoint pen. Doodle your enemy, then fight waves of it with slow-mo, slides and an eraser sword." />
+    <meta property="og:title" content="Pen Strike" />
+    <meta property="og:description" content="Draw your enemy. Then erase it. A free browser FPS drawn in ballpoint pen." />
+    <meta property="og:image" content="/img/pen.webp" />
+    <meta name="theme-color" content="#f7f4ec" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26 L22 6 L26 10 L10 30 Z' fill='%23f7f4ec' stroke='%232a2e85' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M6 26 L4 31 L10 30' fill='%232a2e85'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/landing/landing.css" />
   </head>
   <body>
-    <canvas id="view"></canvas>
+    <header class="top">
+      <a class="logo" href="/">Pen Strike</a>
+      <nav>
+        <a href="#features">features</a>
+        <a href="#how">how to play</a>
+        <a class="btn small" href="/play/">play</a>
+      </nav>
+    </header>
 
-    <div id="hud" style="display: none">
-      <div id="hud-score" class="tl">SCORE 0</div>
-      <div class="tr">
-        <div id="hud-wave">WAVE 1</div>
-        <div id="hud-left" class="small">0 enemies left</div>
-        <div id="hud-clock" class="small" style="display: none"></div>
-      </div>
-      <div id="hud-combo" style="display: none">
-        <div id="hud-combo-mult"></div>
-        <div class="bar"><div id="hud-combo-fill" class="fill"></div></div>
-      </div>
-      <div id="hud-boss" style="display: none">
-        <div id="hud-boss-name">THE DOODLER</div>
-        <div class="bar"><div id="hud-boss-fill" class="fill"></div></div>
-      </div>
-      <div id="hud-banner"></div>
-      <div id="hud-crosshair"></div>
-      <div id="hud-hitmark"></div>
-      <div id="hud-scope" style="display: none"></div>
-      <div id="hud-hint"></div>
-      <div class="bl">
-        <div class="hp-row">
-          <span class="lbl">HP</span>
-          <div class="bar hp"><div id="hud-hp-fill" class="fill"></div></div>
-          <span id="hud-hp-num">100</span>
-        </div>
-        <div id="hud-ammo"><b>30</b>/150</div>
-        <div id="hud-pips"></div>
-      </div>
-      <div id="hud-meter">
-        <div class="lbl">TIME <span class="key">hold SHIFT</span></div>
-        <div class="bar"><div id="hud-meter-fill" class="fill"></div><div class="ticks"></div></div>
-      </div>
-      <div class="br">
-        <div id="hud-weapons"></div>
-        <div id="hud-weapon-name">RIFLE</div>
-        <div id="hud-weapon-hint" class="small"></div>
-      </div>
-    </div>
-
-    <div id="menu" class="screen">
-      <div class="sheet">
-        <h1>Pen Strike</h1>
-        <p class="sub">Draw your enemy. Then shoot it. A lot.</p>
-        <div id="challenge" style="display: none"></div>
-        <div class="menu-body">
-          <div class="pad-col">
-            <div class="tabs">
-              <button class="tab active" data-sheet="enemy">enemy</button>
-              <button class="tab" data-sheet="boss">boss</button>
-            </div>
-            <div id="pad"></div>
-          </div>
-          <div class="side">
-            <div class="btns">
-              <button id="btn-undo">undo</button>
-              <button id="btn-clear">clear</button>
-              <button id="btn-example">example</button>
-            </div>
-            <div id="stat-card">
-              <div class="stat-title"><span id="stat-who">your enemy</span>: <b id="stat-label">balanced doodle</b></div>
-              <div class="stat"><span>HP</span><div class="bar"><div class="fill" id="stat-hp"></div></div></div>
-              <div class="stat"><span>speed</span><div class="bar"><div class="fill" id="stat-speed"></div></div></div>
-              <div class="stat"><span>width</span><div class="bar"><div class="fill" id="stat-size"></div></div></div>
-              <div class="stat"><span>head</span><div class="bar"><div class="fill" id="stat-head"></div></div></div>
-              <div class="stat-hint">filled-in & big = tanky + slow · thin = fast + fragile</div>
-            </div>
-            <button id="btn-start" class="big">Fight!</button>
-            <div class="row">
-              <label class="toggle"><input type="checkbox" id="color-mode" /> <span>color mode</span></label>
-              <button id="btn-share">share drawings</button>
-            </div>
-            <div id="share-out" style="display: none"><input id="share-link" readonly /><span id="share-msg"></span></div>
-            <label class="sens"><span>aim sensitivity</span><input id="sens-menu" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
-            <ul class="controls">
-              <li><b>WASD</b> move · <b>SPACE</b> jump, again in the air</li>
-              <li><b>C</b> slide · jump out of a slide to keep speed</li>
-              <li><b>Mouse</b> aim · <b>click</b> shoot</li>
-              <li><b>1-5</b> / wheel / Q swap · <b>R</b> reload</li>
-              <li><b>5</b> eraser sword: swing to rub enemies out</li>
-              <li><b>Hold SHIFT</b> slow time (5s bar)</li>
-              <li>kills refill the time bar</li>
-              <li><b>Right-click</b> sniper scope</li>
-              <li>top quarter of your drawing = headshot</li>
-            </ul>
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <h1>
+            <span class="scribble-title">Draw your enemy.</span>
+            <span class="scribble-title red">Then erase it.</span>
+            <svg class="underline" viewBox="0 0 400 24" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M4 16 C 80 6, 160 22, 230 12 S 360 6, 396 14" />
+            </svg>
+          </h1>
+          <p class="lede">
+            A free browser shooter drawn entirely in ballpoint pen. Doodle a monster, then fight waves of it.
+            You get slow-motion, slides and double jumps, and a giant eraser sword.
+          </p>
+          <div class="cta-row">
+            <a class="btn big" href="/play/">Play free in your browser →</a>
+            <span class="note-small">desktop · mouse &amp; keyboard · no install</span>
           </div>
         </div>
-      </div>
-    </div>
 
-    <div id="pause" class="screen" style="display: none">
-      <div class="sheet small-sheet">
-        <h2>paused</h2>
-        <label class="sens"><span>aim sensitivity</span><input id="sens-pause" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
-        <button id="btn-resume" class="big">click to resume</button>
-        <button id="btn-quit">quit to drawing</button>
-      </div>
-    </div>
+        <div class="hero-pad">
+          <div class="pad-label">try it: doodle your enemy here ↓</div>
+          <div id="pad"></div>
+          <div class="pad-buttons">
+            <button id="pad-undo">undo</button>
+            <button id="pad-clear">clear</button>
+            <button id="pad-example">example</button>
+          </div>
+          <a class="btn" id="pad-fight" href="/play/">fight this doodle →</a>
+          <p class="pad-hint">your drawing carries over into the game</p>
+        </div>
+      </section>
 
-    <div id="upgrade" class="screen" style="display: none">
-      <div class="upgrade-wrap">
-        <h2>pick an upgrade</h2>
-        <p id="upgrade-sub" class="sub"></p>
-        <div id="upgrade-cards"></div>
-        <p class="sub small">click a note or press its number</p>
-      </div>
-    </div>
+      <section class="gallery" aria-label="Screenshots">
+        <figure class="photo tilt-l">
+          <img src="/img/pen.webp" alt="First-person view of the pen-drawn construction site with doodled enemies firing red ink bullets" loading="lazy" />
+          <figcaption>every frame is pen on notebook paper</figcaption>
+        </figure>
+        <figure class="photo tilt-r">
+          <img src="/img/color.webp" alt="Color mode: grey concrete building, yellow crane and blue sky, still drawn in pen" loading="lazy" />
+          <figcaption>…or flip on color mode</figcaption>
+        </figure>
+        <figure class="photo tilt-l">
+          <img src="/img/boss.webp" alt="The Doodler boss, a giant version of your drawing, during slow motion" loading="lazy" />
+          <figcaption>The Doodler: a boss you draw yourself</figcaption>
+        </figure>
+      </section>
 
-    <div id="over" class="screen" style="display: none">
-      <div class="sheet small-sheet">
-        <h2>erased.</h2>
-        <p id="over-stats"></p>
-        <button id="btn-again" class="big">again</button>
-        <button id="btn-challenge">share as a challenge</button>
-        <div id="over-share" style="display: none"><input id="over-link" readonly /><span id="over-msg"></span></div>
-        <button id="btn-redraw">redraw enemy</button>
-      </div>
-    </div>
+      <section id="features" class="features">
+        <h2>what's in the notebook</h2>
+        <div class="notes">
+          <article class="note" style="--h: 48">
+            <h3>Your doodle, your enemy</h3>
+            <p>Whatever you draw becomes the horde. Big, filled-in blobs are slow tanks. Thin stick figures are fast but fragile. The top quarter of the drawing is the headshot zone.</p>
+          </article>
+          <article class="note" style="--h: 200">
+            <h3>5 seconds of slow-mo</h3>
+            <p>Hold Shift to slow the world to a crawl and dodge the ink bullets. The bar only refills when you erase enemies.</p>
+          </article>
+          <article class="note" style="--h: 330">
+            <h3>Eraser sword</h3>
+            <p>A giant pencil with a pink eraser blade. Lunge in and rub enemies out from the top down.</p>
+          </article>
+          <article class="note" style="--h: 60">
+            <h3>Slide &amp; double jump</h3>
+            <p>Slide with C, jump out of it to keep your speed, then flick a second jump in mid-air.</p>
+          </article>
+          <article class="note" style="--h: 270">
+            <h3>Sticky-note upgrades</h3>
+            <p>Pick an upgrade after every wave: ricochet shots, ink bombs, a sword that swats bullets, extra jumps, and more.</p>
+          </article>
+          <article class="note" style="--h: 0">
+            <h3>Combos &amp; the clock</h3>
+            <p>Chain kills for up to ×5 score. Beat the wave clock for bonus points and a 4th upgrade choice.</p>
+          </article>
+          <article class="note" style="--h: 140">
+            <h3>Draw the boss too</h3>
+            <p>Every 5th wave, The Doodler shows up as whatever horror you sketched on the boss page.</p>
+          </article>
+          <article class="note" style="--h: 25">
+            <h3>Share a challenge</h3>
+            <p>Send a friend a link with your doodles and your score. They fight your monsters and try to beat it.</p>
+          </article>
+        </div>
+      </section>
 
-    <script type="module" src="/src/main.ts"></script>
+      <section class="sword-strip">
+        <figure class="photo wide tilt-r">
+          <img src="/img/upgrade.webp" alt="The upgrade screen: four colorful sticky notes to pick from between waves" loading="lazy" />
+          <figcaption>pick a sticky note between waves</figcaption>
+        </figure>
+        <figure class="photo wide tilt-l">
+          <img src="/img/weapons.webp" alt="The colorful weapons: shotgun, pistol, sniper and the eraser sword" loading="lazy" />
+          <figcaption>4 guns + 1 very large eraser</figcaption>
+        </figure>
+      </section>
+
+      <section id="how" class="how">
+        <h2>how to play</h2>
+        <table class="controls">
+          <tbody>
+            <tr><th>WASD</th><td>move</td></tr>
+            <tr><th>Space</th><td>jump, then press again in the air</td></tr>
+            <tr><th>C</th><td>slide (jump out of it to keep your speed)</td></tr>
+            <tr><th>Mouse</th><td>aim · click to shoot</td></tr>
+            <tr><th>Hold Shift</th><td>slow time (kills refill the bar)</td></tr>
+            <tr><th>1–5 / wheel</th><td>rifle, shotgun, pistol, sniper, eraser sword</td></tr>
+            <tr><th>Right-click</th><td>sniper scope</td></tr>
+            <tr><th>R</th><td>reload</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="final">
+        <h2>Grab a pen.</h2>
+        <a class="btn big" href="/play/">Play Pen Strike →</a>
+        <p class="note-small mobile-only">heads up: it plays on a computer with a mouse and keyboard</p>
+      </section>
+    </main>
+
+    <footer>
+      <span>Pen Strike · drawn with ink &amp; three.js</span>
+    </footer>
+
+    <script type="module" src="/src/landing/landing.ts"></script>
   </body>
 </html>

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pen Strike</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <div id="hud" style="display: none">
+      <div id="hud-score" class="tl">SCORE 0</div>
+      <div class="tr">
+        <div id="hud-wave">WAVE 1</div>
+        <div id="hud-left" class="small">0 enemies left</div>
+        <div id="hud-clock" class="small" style="display: none"></div>
+      </div>
+      <div id="hud-combo" style="display: none">
+        <div id="hud-combo-mult"></div>
+        <div class="bar"><div id="hud-combo-fill" class="fill"></div></div>
+      </div>
+      <div id="hud-boss" style="display: none">
+        <div id="hud-boss-name">THE DOODLER</div>
+        <div class="bar"><div id="hud-boss-fill" class="fill"></div></div>
+      </div>
+      <div id="hud-banner"></div>
+      <div id="hud-crosshair"></div>
+      <div id="hud-hitmark"></div>
+      <div id="hud-scope" style="display: none"></div>
+      <div id="hud-hint"></div>
+      <div class="bl">
+        <div class="hp-row">
+          <span class="lbl">HP</span>
+          <div class="bar hp"><div id="hud-hp-fill" class="fill"></div></div>
+          <span id="hud-hp-num">100</span>
+        </div>
+        <div id="hud-ammo"><b>30</b>/150</div>
+        <div id="hud-pips"></div>
+      </div>
+      <div id="hud-meter">
+        <div class="lbl">TIME <span class="key">hold SHIFT</span></div>
+        <div class="bar"><div id="hud-meter-fill" class="fill"></div><div class="ticks"></div></div>
+      </div>
+      <div class="br">
+        <div id="hud-weapons"></div>
+        <div id="hud-weapon-name">RIFLE</div>
+        <div id="hud-weapon-hint" class="small"></div>
+      </div>
+    </div>
+
+    <div id="menu" class="screen">
+      <div class="sheet">
+        <h1>Pen Strike</h1>
+        <p class="sub">Draw your enemy. Then shoot it. A lot.</p>
+        <div id="challenge" style="display: none"></div>
+        <div class="menu-body">
+          <div class="pad-col">
+            <div class="tabs">
+              <button class="tab active" data-sheet="enemy">enemy</button>
+              <button class="tab" data-sheet="boss">boss</button>
+            </div>
+            <div id="pad"></div>
+          </div>
+          <div class="side">
+            <div class="btns">
+              <button id="btn-undo">undo</button>
+              <button id="btn-clear">clear</button>
+              <button id="btn-example">example</button>
+            </div>
+            <div id="stat-card">
+              <div class="stat-title"><span id="stat-who">your enemy</span>: <b id="stat-label">balanced doodle</b></div>
+              <div class="stat"><span>HP</span><div class="bar"><div class="fill" id="stat-hp"></div></div></div>
+              <div class="stat"><span>speed</span><div class="bar"><div class="fill" id="stat-speed"></div></div></div>
+              <div class="stat"><span>width</span><div class="bar"><div class="fill" id="stat-size"></div></div></div>
+              <div class="stat"><span>head</span><div class="bar"><div class="fill" id="stat-head"></div></div></div>
+              <div class="stat-hint">filled-in & big = tanky + slow · thin = fast + fragile</div>
+            </div>
+            <button id="btn-start" class="big">Fight!</button>
+            <div class="row">
+              <label class="toggle"><input type="checkbox" id="color-mode" /> <span>color mode</span></label>
+              <button id="btn-share">share drawings</button>
+            </div>
+            <div id="share-out" style="display: none"><input id="share-link" readonly /><span id="share-msg"></span></div>
+            <label class="sens"><span>aim sensitivity</span><input id="sens-menu" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
+            <ul class="controls">
+              <li><b>WASD</b> move · <b>SPACE</b> jump, again in the air</li>
+              <li><b>C</b> slide · jump out of a slide to keep speed</li>
+              <li><b>Mouse</b> aim · <b>click</b> shoot</li>
+              <li><b>1-5</b> / wheel / Q swap · <b>R</b> reload</li>
+              <li><b>5</b> eraser sword: swing to rub enemies out</li>
+              <li><b>Hold SHIFT</b> slow time (5s bar)</li>
+              <li>kills refill the time bar</li>
+              <li><b>Right-click</b> sniper scope</li>
+              <li>top quarter of your drawing = headshot</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pause" class="screen" style="display: none">
+      <div class="sheet small-sheet">
+        <h2>paused</h2>
+        <label class="sens"><span>aim sensitivity</span><input id="sens-pause" class="sens-input" type="range" min="0.2" max="3" step="0.05" value="1" /><output class="sens-val">1.00×</output></label>
+        <button id="btn-resume" class="big">click to resume</button>
+        <button id="btn-quit">quit to drawing</button>
+      </div>
+    </div>
+
+    <div id="upgrade" class="screen" style="display: none">
+      <div class="upgrade-wrap">
+        <h2>pick an upgrade</h2>
+        <p id="upgrade-sub" class="sub"></p>
+        <div id="upgrade-cards"></div>
+        <p class="sub small">click a note or press its number</p>
+      </div>
+    </div>
+
+    <div id="over" class="screen" style="display: none">
+      <div class="sheet small-sheet">
+        <h2>erased.</h2>
+        <p id="over-stats"></p>
+        <button id="btn-again" class="big">again</button>
+        <button id="btn-challenge">share as a challenge</button>
+        <div id="over-share" style="display: none"><input id="over-link" readonly /><span id="over-msg"></span></div>
+        <button id="btn-redraw">redraw enemy</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

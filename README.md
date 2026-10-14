@@ -4,7 +4,7 @@ A browser FPS drawn in blue ballpoint on lined notebook paper. You draw the enem
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # landing page: http://localhost:5173  ·  game: http://localhost:5173/play/
 npm test         # logic tests (time meter, waves, weapons, collision)
 npm run build    # type-check + production build into dist/
 ```
@@ -43,3 +43,14 @@ edges come from depth and normal discontinuities, crosshatching from the lightin
 The lines "boil" (re-jitter) at about 8 fps. Enemies, bullets and FX are flat ink sprites drawn on top.
 
 Debug URL flags: `?view=1|2|3` (color / normal / edge buffers), `?noshadow`, `?test` (exposes `window.__game`).
+
+## Site & hosting
+- `index.html` + `src/landing/` is the landing page. Its drawing pad saves to the same storage key as the game, so a doodle drawn there becomes the enemy in `/play/`.
+- `play/index.html` is the game.
+- `.github/workflows/pages.yml` runs the tests, builds `dist/`, and deploys it to GitHub Pages on every push to `feature/doodle-fps`.
+
+One-time setup for **penstrike.paycoach.app**:
+1. GitHub → repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. At the DNS provider for `paycoach.app`, add a **CNAME** record: name `penstrike`, value `daniepro93.github.io`. On Cloudflare, set it to *DNS only* (grey cloud).
+3. GitHub → **Settings → Pages → Custom domain**: `penstrike.paycoach.app`, Save. Once the certificate is issued (minutes to an hour), tick **Enforce HTTPS**.
+4. Re-run the **Deploy site** workflow (Actions tab), or push any commit.
