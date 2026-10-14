@@ -6,6 +6,8 @@ import { raycastBoxes } from '../world/collision';
 import type { Hud } from '../ui/hud';
 import type { Sfx } from './audio';
 import { GameClock } from './clock';
+import { Combo } from './combo';
+import { DoodleStats, doodleStats } from './doodleStats';
 import { ENEMY_DEFS, Enemy, EnemyContext } from './enemy';
 import { FX } from './fx';
 import type { Input } from './input';
@@ -13,7 +15,8 @@ import { Player } from './player';
 import { Projectiles } from './projectiles';
 import { TimeMeter } from './timeMeter';
 import { ViewModel } from './viewmodel';
-import { EnemyKind, isBossWave, maxAlive, spawnQueue } from './waves';
+import { Mods, Upgrade, modsFrom, rollUpgrades } from './upgrades';
+import { EnemyKind, isBossWave, maxAlive, parTime, spawnQueue, timeBonus } from './waves';
 import { HEADSHOT_MULT, WEAPONS, WeaponState, damageAt } from './weapons';
 
 interface Pickup {
@@ -25,7 +28,12 @@ interface Pickup {
   t: number;
 }
 
-type WaveState = 'intro' | 'fighting' | 'break';
+type WaveState = 'intro' | 'fighting' | 'break' | 'choosing';
+
+export interface Doodles {
+  enemy: DoodleSprite;
+  boss: DoodleSprite;
+}
 
 const BASE_FOV = 75;
 const ERASER_PINK = new THREE.Color('#ee7fae');
@@ -49,7 +57,14 @@ export class Game {
   private fx: FX;
   private pickups: Pickup[] = [];
   private markerTextures = { ammo: markerTex('ammo'), health: markerTex('health') };
-  private sprite: DoodleSprite | null = null;
+  private doodles: Doodles | null = null;
+  private stats: { enemy: DoodleStats; boss: DoodleStats } | null = null;
+  readonly combo = new Combo();
+  private owned: Record<string, number> = {};
+  mods: Mods = modsFrom({});
+  /** Real-time seconds left on the wave clock (bonus only). */
+  private clockLeft = 0;
+  private lastTick = 0;
 
   wave = 0;
   score = 0;
@@ -66,6 +81,10 @@ export class Game {
   private deathT = 0;
   private idleT = 0;
   onDeath: () => void = () => {};
+  /** Called between waves with upgrade choices; the caller pauses and calls chooseUpgrade. */
+  onUpgrade: (choices: Upgrade[], beatClock: boolean) => void = () => {};
+  private choices: Upgrade[] = [];
+  private beatClock = false;
 
   constructor(private hud: Hud, private sfx: Sfx, private input: Input) {
     this.level = buildLevel();
@@ -127,8 +146,15 @@ export class Game {
     this.camera.updateProjectionMatrix();
   }
 
-  start(sprite: DoodleSprite): void {
-    this.sprite = sprite;
+  setColorMode(on: boolean): void {
+    this.level.setColorMode(on);
+  }
+
+  start(doodles: Doodles): void {
+    this.doodles = doodles;
+    this.stats = { enemy: statsOf(doodles.enemy), boss: statsOf(doodles.boss) };
+    this.owned = {};
+    this.combo.reset();
     for (const e of this.enemies) this.removeEnemy(e);
     this.enemies = [];
     for (const p of this.pickups) this.removePickup(p);
@@ -137,6 +163,7 @@ export class Game {
     this.fx.clear();
     this.weapons = WEAPONS.map((d) => new WeaponState(d));
     this.switchWeapon(0, true);
+    this.applyMods();
     this.player.spawn(this.level.playerSpawn);
     this.meter.reset();
     this.clock.timeScale = 1;
@@ -149,7 +176,7 @@ export class Game {
     this.zoomed = false;
     this.viewmodel.root.visible = true;
     this.nextWave();
-    this.hud.hint('WASD move · SPACE jump · hold SHIFT to slow time · 1-5 swap · 5 = eraser sword · R reload', 6);
+    this.hud.hint('WASD move · SPACE jump (twice!) · C slide · hold SHIFT to slow time · 5 = eraser sword', 6);
   }
 
   /** Spin the camera over the level behind the menu. */
@@ -185,6 +212,21 @@ export class Game {
 
     this.player.look(input, this.zoomed ? 0.35 : 1);
     this.player.update(pDt, input, this.level.boxes);
+    switch (this.player.event) {
+      case 'jump':
+        this.sfx.jump();
+        break;
+      case 'airjump':
+        this.sfx.airJump();
+        this.fx.spray(this.player.eye(new THREE.Vector3()).setY(this.player.pos.y + 0.1), new THREE.Vector3(0, 1, 0), ERASER_PINK, 4, 0.05);
+        break;
+      case 'slide':
+        this.sfx.slide();
+        break;
+      case 'land':
+        this.sfx.land();
+        break;
+    }
     this.player.applyCamera(this.camera);
     this.camera.updateMatrixWorld(true);
 
@@ -228,11 +270,13 @@ export class Game {
     this.damageFlash = Math.max(0, this.damageFlash - realDt * 1.8);
 
     this.updatePickups(wDt, realDt);
-    this.updateWaves(wDt);
+    this.combo.update(wDt);
+    this.updateWaves(wDt, realDt);
     this.fx.update(wDt, realDt);
 
-    // Zoom FOV.
-    const fov = this.zoomed ? ZOOM_FOV : BASE_FOV;
+    // Zoom FOV, with a speed kick when sliding / moving fast.
+    const speedKick = Math.max(0, Math.min(12, (this.player.speed - 7) * 1.5));
+    const fov = this.zoomed ? ZOOM_FOV : BASE_FOV + speedKick;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-realDt * 20));
       this.camera.updateProjectionMatrix();
@@ -307,7 +351,7 @@ export class Game {
       const endT = best ? best.t : wh ? wh.t : 120;
       const end = origin.clone().addScaledVector(dir, endT);
       if (best) {
-        const mult = (best.head ? HEADSHOT_MULT : 1) * (best.e.def.heavy ? def.heavyMult : 1);
+        const mult = (best.head ? HEADSHOT_MULT + this.mods.headshot : 1) * (best.e.def.heavy ? def.heavyMult : 1) * this.mods.damage;
         const prev = hits.get(best.e);
         const dmg = damageAt(def, best.t) * mult;
         if (prev) {
@@ -317,6 +361,7 @@ export class Game {
         this.fx.spray(end, dir, best.e.def.ink, def.pellets > 1 ? 2 : 5);
       } else if (wh) {
         this.fx.splat(end, wh.box, def.id === 'sniper' ? 0.5 : 0.28);
+        if (this.mods.ricochet) this.ricochet(end, def, hits);
       }
       if (p < 4) this.fx.tracer(muzzle.clone().addScaledVector(dir, 0.15), end);
     }
@@ -350,12 +395,18 @@ export class Game {
       this.player.vel.x += fx * m.lunge;
       this.player.vel.z += fz * m.lunge;
     }
+    const range = m.range * this.mods.swordRange;
+    if (this.mods.swatter) {
+      for (const p of this.projectiles.eraseInCone(eye, fx, fz, range + 0.5, Math.cos(m.arc))) {
+        this.fx.spray(p, fwd, ERASER_PINK, 3, 0.05);
+      }
+    }
     for (const e of [...this.enemies]) {
       if (!e.ready || !e.alive) continue;
       const dx = e.pos.x - eye.x;
       const dz = e.pos.z - eye.z;
       const d = Math.hypot(dx, dz);
-      if (d - e.radius > m.range) continue;
+      if (d - e.radius > range) continue;
       if (eye.y < e.pos.y - 0.5 || eye.y > e.pos.y + e.height + 1.5) continue;
       const cos = d > 1e-3 ? (dx * fx + dz * fz) / d : 1;
       if (d > 0.8 && cos < Math.cos(m.arc)) continue;
@@ -365,7 +416,7 @@ export class Game {
       dir.divideScalar(len || 1);
       if (raycastBoxes(this.level.boxes, eye, dir, Math.max(0, len - e.radius))) continue;
       this.fx.spray(to, dir, ERASER_PINK, 6, 0.06);
-      const killed = e.damage(def.damage * (e.def.heavy ? def.heavyMult : 1));
+      const killed = e.damage(def.damage * (e.def.heavy ? def.heavyMult : 1) * this.mods.damage);
       if (killed) this.onKill(e, false, dir, true);
       else this.sfx.hit();
       this.hud.hitmarker(false, killed);
@@ -374,19 +425,102 @@ export class Game {
 
   private onKill(e: Enemy, head: boolean, dir: THREE.Vector3, erased = false): void {
     this.kills++;
-    this.score += Math.round(e.def.score * (head ? 1.5 : 1));
+    const prevMult = this.combo.mult;
+    const mult = this.combo.onKill(erased || this.clock.slowAmount > 0.5);
+    if (mult > prevMult) this.sfx.combo(mult);
+    this.score += Math.round(e.def.score * (head ? 1.5 : 1) * mult);
     this.meter.onKill(head);
+    if (this.mods.healOnKill) this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.mods.healOnKill);
     if (erased) this.fx.erase(e, ERASER_PINK);
     else this.fx.shatter(e, dir.clone().multiplyScalar(e.def.kind === 'boss' ? 2 : 5));
     this.sfx.kill();
     this.removeEnemy(e);
     this.enemies = this.enemies.filter((x) => x !== e);
+    if (this.mods.inkBomb > 0) this.inkBomb(e);
     if (e.def.kind === 'boss') {
       this.hud.banner('THE DOODLER IS ERASED', 2.5);
       this.dropPickup('health', e.pos);
       this.dropPickup('ammo', e.pos.clone().add(new THREE.Vector3(1.5, 0, 0)));
     } else if (Math.random() < 0.3) {
       this.dropPickup(Math.random() < 0.65 ? 'ammo' : 'health', e.pos);
+    }
+  }
+
+  /** Ink Bomb upgrade: a kill splashes damage on everyone nearby (can chain). */
+  private inkBomb(dead: Enemy): void {
+    const at = dead.pos.clone();
+    at.y += dead.height * 0.5;
+    this.fx.flash(at, 2.2, false);
+    this.fx.spray(at, new THREE.Vector3(0, -1, 0), dead.def.ink, 10, 0.15);
+    this.sfx.inkBomb();
+    for (const o of [...this.enemies]) {
+      if (!o.alive || !o.ready) continue;
+      const d = Math.hypot(o.pos.x - dead.pos.x, o.pos.z - dead.pos.z) - o.radius;
+      if (d > 3.5) continue;
+      if (o.damage(this.mods.inkBomb)) this.onKill(o, false, new THREE.Vector3(o.pos.x - at.x, 0.5, o.pos.z - at.z).normalize());
+    }
+  }
+
+  /** Ricochet upgrade: a shot that hits a wall bounces to the nearest visible enemy within 10m. */
+  private ricochet(from: THREE.Vector3, def: WeaponState['def'], hits: Map<Enemy, { dmg: number; head: boolean; dir: THREE.Vector3 }>): void {
+    let best: Enemy | null = null;
+    let bestD = 10;
+    const target = new THREE.Vector3();
+    for (const e of this.enemies) {
+      if (!e.alive || !e.ready) continue;
+      target.set(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
+      const d = from.distanceTo(target);
+      if (d >= bestD) continue;
+      const dir = target.clone().sub(from).normalize();
+      const start = from.clone().addScaledVector(dir, 0.05);
+      if (raycastBoxes(this.level.boxes, start, dir, d - e.radius)) continue;
+      best = e;
+      bestD = d;
+    }
+    if (!best) return;
+    target.set(best.pos.x, best.pos.y + best.height * 0.5, best.pos.z);
+    const dir = target.clone().sub(from).normalize();
+    this.fx.tracer(from, target);
+    const dmg = def.damage * 0.6 * this.mods.damage;
+    const prev = hits.get(best);
+    if (prev) prev.dmg += dmg;
+    else hits.set(best, { dmg, head: false, dir });
+  }
+
+  // ── Upgrades ──────────────────────────────────────────────────────────
+  chooseUpgrade(i: number): void {
+    if (this.waveState !== 'choosing') return;
+    const u = this.choices[i];
+    if (u) {
+      this.owned[u.id] = (this.owned[u.id] ?? 0) + 1;
+      const hpBefore = this.mods.maxHp;
+      this.applyMods();
+      // New max HP comes with matching health.
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + (this.mods.maxHp - hpBefore));
+      this.sfx.upgrade();
+      this.hud.hint(`${u.name}: ${u.text}`, 2.5);
+    }
+    this.choices = [];
+    this.nextWave();
+  }
+
+  get ownedUpgrades(): Record<string, number> {
+    return { ...this.owned };
+  }
+
+  private applyMods(): void {
+    const m = (this.mods = modsFrom(this.owned));
+    this.player.airJumps = m.airJumps;
+    this.player.slideMult = m.slide;
+    this.player.speedMult = m.moveSpeed;
+    this.player.maxHp = 100 + m.maxHp;
+    this.meter.capacity = 5 + m.meterCap;
+    this.meter.killRefill = 0.75 + m.meterRefill;
+    this.combo.window = 3 + m.comboWindow;
+    for (const w of this.weapons) {
+      w.rateMult = m.fireRate;
+      w.reloadMult = m.reload;
+      w.setReserveMult(m.reserve);
     }
   }
 
@@ -397,11 +531,13 @@ export class Game {
     this.waveState = 'intro';
     this.stateTimer = 2.2;
     this.spawnTimer = 0;
+    this.clockLeft = parTime(this.wave);
     this.hud.banner(isBossWave(this.wave) ? `WAVE ${this.wave} — THE DOODLER` : `WAVE ${this.wave}`);
     this.sfx.wave();
   }
 
-  private updateWaves(dt: number): void {
+  private updateWaves(dt: number, realDt: number): void {
+    if (this.waveState === 'choosing') return;
     if (this.waveState === 'intro') {
       this.stateTimer -= dt;
       if (this.stateTimer <= 0) this.waveState = 'fighting';
@@ -409,8 +545,21 @@ export class Game {
     }
     if (this.waveState === 'break') {
       this.stateTimer -= dt;
-      if (this.stateTimer <= 0) this.nextWave();
+      if (this.stateTimer <= 0) {
+        this.waveState = 'choosing';
+        this.choices = rollUpgrades(this.owned, this.beatClock ? 4 : 3);
+        if (this.choices.length) this.onUpgrade(this.choices, this.beatClock);
+        else this.nextWave();
+      }
       return;
+    }
+    // Wave clock runs in real time: slow-mo slows enemies, not the clock.
+    if (this.clockLeft > 0) {
+      this.clockLeft = Math.max(0, this.clockLeft - realDt);
+      const sec = Math.ceil(this.clockLeft);
+      if (sec <= 5 && sec !== this.lastTick && this.clockLeft > 0) this.sfx.tick();
+      this.lastTick = sec;
+      if (this.clockLeft === 0) this.hud.hint('clock ran out: no time bonus this wave', 2);
     }
     this.spawnTimer -= dt;
     if (this.queue.length && this.spawnTimer <= 0 && this.enemies.length < maxAlive(this.wave)) {
@@ -419,15 +568,17 @@ export class Game {
     }
     if (!this.queue.length && !this.enemies.length) {
       this.waveState = 'break';
-      this.stateTimer = 4;
-      const bonus = 50 * this.wave;
-      this.score += bonus;
-      this.hud.banner(`WAVE CLEARED  +${bonus}`);
+      this.stateTimer = 1.8;
+      const clear = 50 * this.wave;
+      const tb = timeBonus(this.wave, this.clockLeft);
+      this.beatClock = tb > 0;
+      this.score += clear + tb;
+      this.hud.banner(tb > 0 ? `WAVE CLEARED  +${clear}  ⏱ +${tb}` : `WAVE CLEARED  +${clear}`);
     }
   }
 
   private spawnEnemy(kind: EnemyKind, at?: THREE.Vector3): void {
-    if (!this.sprite) return;
+    if (!this.doodles || !this.stats) return;
     let pos = at;
     if (!pos) {
       const pp = this.player.pos;
@@ -439,7 +590,9 @@ export class Game {
     }
     if (kind === 'boss') pos = new THREE.Vector3(34, 0, 8);
     const hpScale = kind === 'boss' ? 1 + (this.wave / 5 - 1) * 0.5 : 1 + (this.wave - 1) * 0.06;
-    const e = new Enemy(ENEMY_DEFS[kind], this.sprite, pos, hpScale);
+    const boss = kind === 'boss';
+    const st = boss ? this.stats.boss : this.stats.enemy;
+    const e = new Enemy(ENEMY_DEFS[kind], boss ? this.doodles.boss : this.doodles.enemy, pos, hpScale * st.hpMult, st.speedMult);
     this.enemies.push(e);
     this.overlay.add(e.mesh, e.shadow);
   }
@@ -542,6 +695,12 @@ export class Game {
       slowActive: this.meter.active,
       boss: boss ? { name: 'THE DOODLER', frac: boss.hp / boss.maxHp } : null,
       zoomed: this.zoomed,
+      combo: this.combo.chain > 0 ? { mult: this.combo.mult, frac: this.combo.fraction } : null,
+      clock: this.waveState === 'fighting' || this.waveState === 'intro' ? { left: this.clockLeft, par: parTime(this.wave) } : null,
     });
   }
+}
+
+function statsOf(s: DoodleSprite): DoodleStats {
+  return doodleStats({ coverage: s.coverage, aspect: s.aspect, headShare: s.headShare });
 }

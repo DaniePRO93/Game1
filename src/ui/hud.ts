@@ -15,6 +15,9 @@ export interface HudState {
   slowActive: boolean;
   boss: { name: string; frac: number } | null;
   zoomed: boolean;
+  combo: { mult: number; frac: number } | null;
+  /** Wave clock (bonus only). */
+  clock: { left: number; par: number } | null;
 }
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -43,6 +46,10 @@ export class Hud {
     hitmark: $('hud-hitmark'),
     scope: $('hud-scope'),
     crosshair: $('hud-crosshair'),
+    combo: $('hud-combo'),
+    comboMult: $('hud-combo-mult'),
+    comboFill: $('hud-combo-fill'),
+    clock: $('hud-clock'),
   };
   private last = '';
   private hintTimer = 0;
@@ -72,6 +79,11 @@ export class Hud {
     this.el.banner.classList.add('pop');
     this.el.banner.style.opacity = '1';
     this.bannerTimer = seconds;
+  }
+
+  clearBanner(): void {
+    this.el.banner.style.opacity = '0';
+    this.bannerTimer = 0;
   }
 
   hitmarker(head: boolean, kill: boolean): void {
@@ -133,6 +145,30 @@ export class Hud {
       e.bossFill.style.width = `${Math.max(0, s.boss.frac * 100)}%`;
     } else {
       e.boss.style.display = 'none';
+    }
+    if (s.combo && s.combo.mult > 1) {
+      e.combo.style.display = '';
+      const txt = `×${s.combo.mult}`;
+      if (e.comboMult.textContent !== txt) {
+        e.comboMult.textContent = txt;
+        e.combo.classList.remove('pop');
+        void e.combo.offsetWidth;
+        e.combo.classList.add('pop');
+      }
+      e.combo.dataset.mult = String(s.combo.mult);
+      e.comboFill.style.width = `${s.combo.frac * 100}%`;
+    } else {
+      e.combo.style.display = 'none';
+      e.comboMult.textContent = '';
+    }
+    if (s.clock) {
+      e.clock.style.display = '';
+      const left = Math.ceil(s.clock.left);
+      e.clock.textContent = left > 0 ? `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} bonus` : '⏱ no bonus';
+      e.clock.classList.toggle('urgent', left > 0 && left <= 10);
+      e.clock.classList.toggle('gone', left <= 0);
+    } else {
+      e.clock.style.display = 'none';
     }
     e.scope.style.display = s.zoomed ? '' : 'none';
     e.crosshair.style.display = s.zoomed ? 'none' : '';

@@ -47,3 +47,16 @@ export function spawnQueue(n: number, rand: () => number = Math.random): EnemyKi
   }
   return q.includes('boss') ? ['boss', ...rest] : rest;
 }
+
+/**
+ * Par time (real seconds) for the wave clock. Beating it only earns a bonus
+ * and an extra upgrade choice; missing it never hurts you.
+ */
+export function parTime(n: number): number {
+  return Math.round(15 + waveSize(n) * 3.5 + (isBossWave(n) ? 30 : 0));
+}
+
+/** Bonus for clearing with `secondsLeft` on the wave clock. */
+export function timeBonus(n: number, secondsLeft: number): number {
+  return secondsLeft > 0 ? Math.round(secondsLeft * 5 * n) : 0;
+}

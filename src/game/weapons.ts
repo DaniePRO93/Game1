@@ -47,6 +47,11 @@ export class WeaponState {
   cooldown = 0;
   reloading = 0;
 
+  /** Run modifiers from upgrades. */
+  rateMult = 1;
+  reloadMult = 1;
+  reserveMult = 1;
+
   constructor(public def: WeaponDef) {
     this.ammo = def.mag;
     this.reserve = def.reserve;
@@ -74,13 +79,13 @@ export class WeaponState {
   fire(): boolean {
     if (!this.canFire()) return false;
     if (!this.def.melee) this.ammo--;
-    this.cooldown = this.def.interval;
+    this.cooldown = this.def.interval / this.rateMult;
     return true;
   }
 
   startReload(): boolean {
     if (this.reloading > 0 || this.ammo >= this.def.mag || this.reserve <= 0) return false;
-    this.reloading = this.def.reload;
+    this.reloading = this.def.reload * this.reloadMult;
     return true;
   }
 
@@ -88,8 +93,20 @@ export class WeaponState {
     this.reloading = 0;
   }
 
+  get maxReserve(): number {
+    return this.def.reserve * this.reserveMult;
+  }
+
   addAmmoFraction(f: number): void {
     if (this.def.reserve === Infinity) return;
-    this.reserve = Math.min(this.def.reserve, this.reserve + Math.ceil(this.def.reserve * f));
+    this.reserve = Math.min(this.maxReserve, this.reserve + Math.ceil(this.def.reserve * f));
+  }
+
+  /** Raise ammo capacity, granting the newly added room as ammo. */
+  setReserveMult(m: number): void {
+    if (this.def.reserve === Infinity || m <= this.reserveMult) return;
+    const gain = this.def.reserve * (m - this.reserveMult);
+    this.reserveMult = m;
+    this.reserve = Math.min(this.maxReserve, this.reserve + Math.ceil(gain));
   }
 }

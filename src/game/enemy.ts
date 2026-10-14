@@ -69,7 +69,11 @@ export class Enemy {
   private flash = 0;
   private bossPhase = 0;
 
-  constructor(public def: EnemyDef, public sprite: DoodleSprite, at: THREE.Vector3, hpScale = 1) {
+  /** Movement speed after drawing stats. */
+  readonly speed: number;
+
+  constructor(public def: EnemyDef, public sprite: DoodleSprite, at: THREE.Vector3, hpScale = 1, speedMult = 1) {
+    this.speed = def.speed * speedMult;
     this.height = def.height;
     this.width = def.height * sprite.aspect;
     this.hp = this.maxHp = def.hp * hpScale;
@@ -172,7 +176,7 @@ export class Enemy {
     const ml = Math.hypot(mx, mz);
     let moving = false;
     if (ml > 0.01) {
-      const sp = this.def.speed * Math.min(1, ml);
+      const sp = this.speed * Math.min(1, ml);
       const px = this.pos.x;
       const pz = this.pos.z;
       this.pos.x += (mx / ml) * sp * dt;
@@ -193,7 +197,7 @@ export class Enemy {
         this.stuckTime = 0;
       }
     }
-    if (moving) this.walkPhase += dt * this.def.speed * 2.2;
+    if (moving) this.walkPhase += dt * this.speed * 2.2;
 
     // Shooting.
     this.fireTimer -= dt;

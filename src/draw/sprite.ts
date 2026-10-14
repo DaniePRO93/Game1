@@ -13,6 +13,10 @@ export interface DoodleSprite {
   height: number;
   /** width / height */
   aspect: number;
+  /** Fraction of the box that is solid. */
+  coverage: number;
+  /** Fraction of solid pixels in the top quarter (headshot zone). */
+  headShare: number;
 }
 
 const MAX_H = 256;
@@ -113,7 +117,26 @@ export function buildSprite(src: HTMLCanvasElement): DoodleSprite | null {
   texture.generateMipmaps = true;
   texture.needsUpdate = true;
 
-  return { texture, mask, width: w, height: h, aspect: w / h };
+  let solidCount = 0;
+  let headCount = 0;
+  const headRow = Math.floor(h * 0.75);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!mask[y * w + x]) continue;
+      solidCount++;
+      if (y >= headRow) headCount++;
+    }
+  }
+
+  return {
+    texture,
+    mask,
+    width: w,
+    height: h,
+    aspect: w / h,
+    coverage: solidCount / (w * h),
+    headShare: solidCount ? headCount / solidCount : 0,
+  };
 }
 
 function dilate(src: Uint8Array, w: number, h: number, r: number): Uint8Array {

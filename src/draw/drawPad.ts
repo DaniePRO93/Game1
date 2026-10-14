@@ -1,21 +1,23 @@
 /**
- * Pre-game drawing pad. The player draws the enemy; strokes persist in
- * localStorage so the same doodle comes back next session.
+ * Pre-game drawing pad with two sheets: the regular enemy and the boss.
+ * Strokes persist in localStorage so your doodles come back next session.
  */
+import type { Pt, Stroke } from '../game/share';
 
-type Pt = [number, number];
-type Stroke = Pt[];
+export type Sheet = 'enemy' | 'boss';
 
 const W = 480;
 const H = 600;
 const INK = '#23287e';
-const STORE_KEY = 'doodle-fps.enemy.v1';
+const STORE_KEYS: Record<Sheet, string> = { enemy: 'doodle-fps.enemy.v1', boss: 'doodle-fps.boss.v1' };
 
 export class DrawPad {
+  /** Visible canvas: shows the active sheet. */
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private strokes: Stroke[] = [];
+  private sheets: Record<Sheet, Stroke[]> = { enemy: [], boss: [] };
   private current: Stroke | null = null;
+  sheet: Sheet = 'enemy';
   onChange: () => void = () => {};
 
   constructor(host: HTMLElement) {
@@ -33,30 +35,69 @@ export class DrawPad {
 
     host.append(guide, this.canvas);
     this.bind();
-    this.load();
+    for (const k of ['enemy', 'boss'] as Sheet[]) this.load(k);
+    this.redraw();
   }
 
-  get isEmpty(): boolean {
-    return this.strokes.length === 0;
+  private get strokes(): Stroke[] {
+    return this.sheets[this.sheet];
+  }
+
+  isEmpty(sheet: Sheet = this.sheet): boolean {
+    return this.sheets[sheet].length === 0;
+  }
+
+  setSheet(sheet: Sheet): void {
+    this.sheet = sheet;
+    this.current = null;
+    this.redraw();
+  }
+
+  getStrokes(sheet: Sheet): Stroke[] {
+    return this.sheets[sheet];
+  }
+
+  /** Replace a sheet (e.g. from a share link). `persist` false keeps your saved drawing untouched. */
+  setStrokes(sheet: Sheet, strokes: Stroke[], persist: boolean): void {
+    this.sheets[sheet] = strokes;
+    if (persist) this.save(sheet);
+    this.redraw();
   }
 
   undo(): void {
     this.strokes.pop();
     this.redraw();
-    this.save();
+    this.save(this.sheet);
   }
 
   clear(): void {
-    this.strokes = [];
+    this.sheets[this.sheet] = [];
     this.redraw();
-    this.save();
+    this.save(this.sheet);
   }
 
-  /** Replace with the built-in example doodle (spiky angry guy). */
+  /** Replace the active sheet with its built-in example doodle. */
   example(): void {
-    this.strokes = exampleStrokes();
+    this.sheets[this.sheet] = this.sheet === 'boss' ? bossExampleStrokes() : exampleStrokes();
     this.redraw();
-    this.save();
+    this.save(this.sheet);
+  }
+
+  /** Fill a sheet with its example if it is empty. */
+  ensure(sheet: Sheet): void {
+    if (!this.isEmpty(sheet)) return;
+    this.sheets[sheet] = sheet === 'boss' ? bossExampleStrokes() : exampleStrokes();
+    this.save(sheet);
+    if (sheet === this.sheet) this.redraw();
+  }
+
+  /** Render a sheet into an offscreen canvas (for sprite building). */
+  renderSheet(sheet: Sheet): HTMLCanvasElement {
+    const cv = document.createElement('canvas');
+    cv.width = W;
+    cv.height = H;
+    paint(cv.getContext('2d', { willReadFrequently: true })!, this.sheets[sheet]);
+    return cv;
   }
 
   private bind(): void {
@@ -81,57 +122,59 @@ export class DrawPad {
     const end = () => {
       if (!this.current) return;
       this.current = null;
-      this.save();
+      this.save(this.sheet);
     };
     this.canvas.addEventListener('pointerup', end);
     this.canvas.addEventListener('pointercancel', end);
   }
 
   private redraw(): void {
-    const c = this.ctx;
-    c.clearRect(0, 0, W, H);
-    c.strokeStyle = INK;
-    c.fillStyle = INK;
-    c.lineWidth = 7;
-    c.lineCap = 'round';
-    c.lineJoin = 'round';
-    for (const s of this.strokes) {
-      if (s.length === 1) {
-        c.beginPath();
-        c.arc(s[0][0], s[0][1], 3.5, 0, Math.PI * 2);
-        c.fill();
-        continue;
-      }
-      c.beginPath();
-      c.moveTo(s[0][0], s[0][1]);
-      for (let i = 1; i < s.length - 1; i++) {
-        const mx = (s[i][0] + s[i + 1][0]) / 2;
-        const my = (s[i][1] + s[i + 1][1]) / 2;
-        c.quadraticCurveTo(s[i][0], s[i][1], mx, my);
-      }
-      const l = s[s.length - 1];
-      c.lineTo(l[0], l[1]);
-      c.stroke();
-    }
+    paint(this.ctx, this.strokes);
     this.onChange();
   }
 
-  private save(): void {
+  private save(sheet: Sheet): void {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(this.strokes.map((s) => s.map(([x, y]) => [Math.round(x), Math.round(y)]))));
+      localStorage.setItem(STORE_KEYS[sheet], JSON.stringify(this.sheets[sheet].map((s) => s.map(([x, y]) => [Math.round(x), Math.round(y)]))));
     } catch {
       /* storage unavailable: drawing just won't persist */
     }
   }
 
-  private load(): void {
+  private load(sheet: Sheet): void {
     try {
-      const raw = localStorage.getItem(STORE_KEY);
-      if (raw) this.strokes = JSON.parse(raw);
+      const raw = localStorage.getItem(STORE_KEYS[sheet]);
+      if (raw) this.sheets[sheet] = JSON.parse(raw);
     } catch {
-      this.strokes = [];
+      this.sheets[sheet] = [];
     }
-    this.redraw();
+  }
+}
+
+function paint(c: CanvasRenderingContext2D, strokes: Stroke[]): void {
+  c.clearRect(0, 0, W, H);
+  c.strokeStyle = INK;
+  c.fillStyle = INK;
+  c.lineWidth = 7;
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  for (const s of strokes) {
+    if (s.length === 1) {
+      c.beginPath();
+      c.arc(s[0][0], s[0][1], 3.5, 0, Math.PI * 2);
+      c.fill();
+      continue;
+    }
+    c.beginPath();
+    c.moveTo(s[0][0], s[0][1]);
+    for (let i = 1; i < s.length - 1; i++) {
+      const mx = (s[i][0] + s[i + 1][0]) / 2;
+      const my = (s[i][1] + s[i + 1][1]) / 2;
+      c.quadraticCurveTo(s[i][0], s[i][1], mx, my);
+    }
+    const l = s[s.length - 1];
+    c.lineTo(l[0], l[1]);
+    c.stroke();
   }
 }
 
@@ -196,5 +239,38 @@ export function exampleStrokes(): Stroke[] {
   // Legs.
   s.push([[cx - 30, 400], [cx - 40, 480], [cx - 44, 560], [cx - 72, 566]]);
   s.push([[cx + 30, 400], [cx + 40, 480], [cx + 44, 560], [cx + 72, 566]]);
+  return s;
+}
+
+/** Default boss: a horned blob monster with a big toothy grin. */
+export function bossExampleStrokes(): Stroke[] {
+  const cx = W / 2;
+  const s: Stroke[] = [];
+  // Body blob.
+  const body: Stroke = [];
+  for (let i = 0; i <= 40; i++) {
+    const a = (i / 40) * Math.PI * 2;
+    const r = 170 + Math.sin(a * 6) * 10;
+    body.push([cx + Math.cos(a) * r * 0.85, 330 + Math.sin(a) * r]);
+  }
+  s.push(body);
+  // Horns.
+  s.push([[cx - 90, 200], [cx - 130, 90], [cx - 60, 180]]);
+  s.push([[cx + 90, 200], [cx + 130, 90], [cx + 60, 180]]);
+  // Eyes.
+  s.push(circle(cx - 55, 270, 22, 16));
+  s.push(circle(cx + 55, 270, 22, 16));
+  s.push(circle(cx - 55, 274, 7, 8));
+  s.push(circle(cx + 55, 274, 7, 8));
+  s.push([[cx - 90, 230], [cx - 30, 250]]);
+  s.push([[cx + 90, 230], [cx + 30, 250]]);
+  // Toothy grin.
+  const mouth: Stroke = [];
+  for (let i = 0; i <= 10; i++) mouth.push([cx - 90 + i * 18, 360 + (i % 2 ? 22 : 0) + Math.sin((i / 10) * Math.PI) * 30]);
+  s.push(mouth);
+  s.push([[cx - 90, 360], [cx - 40, 410], [cx + 40, 410], [cx + 90, 360]]);
+  // Stubby legs.
+  s.push([[cx - 70, 485], [cx - 80, 560], [cx - 30, 560], [cx - 30, 495]]);
+  s.push([[cx + 70, 485], [cx + 80, 560], [cx + 30, 560], [cx + 30, 495]]);
   return s;
 }

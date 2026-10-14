@@ -91,6 +91,34 @@ export class Sfx {
     }
   }
 
+  jump(): void {
+    this.tone(0.08, 300, 520, 0.08, 'triangle');
+  }
+  airJump(): void {
+    this.tone(0.1, 520, 900, 0.09, 'triangle');
+  }
+  /** Pencil scraping across paper. */
+  slide(): void {
+    this.burst(0.45, 2500, 0.8, 0.25, 'bandpass', 900);
+  }
+  land(): void {
+    this.burst(0.06, 400, 1, 0.12, 'lowpass');
+  }
+  combo(mult: number): void {
+    this.tone(0.09, 440 * Math.pow(1.19, mult), 440 * Math.pow(1.19, mult) * 1.5, 0.1, 'triangle');
+  }
+  inkBomb(): void {
+    this.burst(0.3, 300, 0.7, 0.4, 'lowpass', 80);
+  }
+  upgrade(): void {
+    this.tone(0.12, 523, 523, 0.12, 'triangle');
+    setTimeout(() => this.tone(0.12, 659, 659, 0.12, 'triangle'), 90);
+    setTimeout(() => this.tone(0.2, 784, 784, 0.12, 'triangle'), 180);
+  }
+  tick(): void {
+    this.tone(0.03, 1800, 1800, 0.05, 'square');
+  }
+
   /** Rubbery whoosh. */
   swing(): void {
     this.burst(0.22, 600, 1.5, 0.45, 'bandpass', 2400);

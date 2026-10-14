@@ -82,6 +82,23 @@ export class Projectiles {
     return dmg;
   }
 
+  /** Remove shots within `range` of `origin` and inside the horizontal cone around `dir`. */
+  eraseInCone(origin: THREE.Vector3, dirX: number, dirZ: number, range: number, cosArc: number): THREE.Vector3[] {
+    const erased: THREE.Vector3[] = [];
+    for (let i = this.shots.length - 1; i >= 0; i--) {
+      const s = this.shots[i];
+      const dx = s.pos.x - origin.x;
+      const dz = s.pos.z - origin.z;
+      const d = Math.hypot(dx, dz);
+      if (d > range || Math.abs(s.pos.y - origin.y) > 2.5) continue;
+      if (d > 0.5 && (dx * dirX + dz * dirZ) / d < cosArc) continue;
+      erased.push(s.pos.clone());
+      this.scene.remove(s.mesh);
+      this.shots.splice(i, 1);
+    }
+    return erased;
+  }
+
   clear(): void {
     for (const s of this.shots) this.scene.remove(s.mesh);
     this.shots = [];

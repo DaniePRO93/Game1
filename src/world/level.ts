@@ -40,8 +40,18 @@ export function colorMaterial(hue: number): THREE.MeshLambertMaterial {
 
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
 
+/** Vibrant palette per style for color mode (hues 0..1). */
+const COLOR_HUES: Record<Style, number[]> = {
+  plain: [0.14, 0.33, 0.5, 0.08],
+  brick: [0.56, 0.6, 0.52],
+  fill: [0.78, 0.92, 0.72],
+  tone: [0.03, 0.95, 0.1],
+};
+
 export interface Level {
   scene: THREE.Group;
+  /** Swap every box between pen-only and vibrant color materials. */
+  setColorMode: (on: boolean) => void;
   /** All collidable boxes (including the ground slab). */
   boxes: Box[];
   /** Boxes that block ground-level walkers (enemies). */
@@ -54,10 +64,15 @@ export interface Level {
 export function buildLevel(): Level {
   const scene = new THREE.Group();
   const boxes: Box[] = [];
+  const styled: THREE.Mesh[] = [];
 
   /** Box with bottom at y, centered at x/z. */
   const box = (x: number, y: number, z: number, sx: number, sy: number, sz: number, style: Style = 'plain', collide = true) => {
     const m = new THREE.Mesh(unitBox, styleMaterial(style));
+    const hues = COLOR_HUES[style];
+    m.userData.style = style;
+    m.userData.hue = hues[styled.length % hues.length];
+    styled.push(m);
     m.scale.set(sx, sy, sz);
     m.position.set(x, y + sy / 2, z);
     m.castShadow = true;
@@ -222,8 +237,13 @@ export function buildLevel(): Level {
     [-37, 34], [-37, 8], [-37, -8], [-37, -22],
   ].map(([x, z]) => new THREE.Vector3(x, 0, z));
 
+  const setColorMode = (on: boolean) => {
+    for (const m of styled) m.material = on ? colorMaterial(m.userData.hue) : styleMaterial(m.userData.style);
+  };
+
   return {
     scene,
+    setColorMode,
     boxes,
     obstacles,
     spawnPoints,
