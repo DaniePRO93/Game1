@@ -1,12 +1,12 @@
-import { DrawPad, PAD_H, PAD_W, heroExampleStrokes, paintStrokes } from './draw/drawPad';
+import { DrawPad, PAD_H, PAD_W, bossExampleStrokes, exampleStrokes, heroExampleStrokes, paintStrokes } from './draw/drawPad';
 import { buildSprite, DoodleSprite } from './draw/sprite';
-import type { Game } from './game/game';
+import type { Doodles, Game } from './game/game';
 import { RemotePlayer } from './game/remotePlayer';
 import { decodeShare, encodeShare, Stroke } from './game/share';
 import type { Input } from './game/input';
 import type { Hud } from './ui/hud';
 import { currentAccount, requireAccount } from './net/accountUi';
-import { KILLS_TO_WIN, MODES, Phase, TEAM_COLORS, TEAM_NAMES, VersusRoom, leader, newRoomCode, normalizeCode } from './net/versus';
+import { KILLS_TO_WIN, MODES, Phase, TEAM_COLORS, TEAM_KILLS_TO_WIN, TEAM_NAMES, VersusRoom, leader, newRoomCode, normalizeCode, teamKills } from './net/versus';
 import { MAPS, mapInfo } from './world/level';
 
 export type Screen = 'menu' | 'solo' | 'multi' | 'options' | 'playing' | 'paused' | 'over' | 'upgrade' | 'versus';
@@ -29,9 +29,9 @@ export interface VersusCtx {
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /**
- * Versus flow: create/join by code → room (draw yourself, vote a map, host
- * picks the mode and presses Start) → match → results with awards → rematch
- * or back to the lobby. The room logic lives in net/versus.ts; this
+ * Multiplayer flow: create/join by code → room (draw yourself, vote a map,
+ * host picks the mode and presses Start) → match → results with awards →
+ * rematch or back to the lobby. The room logic lives in net/versus.ts; this
  * wires it to the game and the DOM.
  */
 export function initVersus(ctx: VersusCtx) {
@@ -63,6 +63,24 @@ export function initVersus(ctx: VersusCtx) {
     return buildSprite(cv);
   }
 
+  /** Co-op enemies: the host's enemy + boss drawings (examples if missing). */
+  async function coopDoodles(token: string | null): Promise<Doodles> {
+    let enemy: Stroke[] = [];
+    let boss: Stroke[] = [];
+    if (token) {
+      try {
+        const d = await decodeShare(token);
+        enemy = d.enemy;
+        boss = d.boss;
+      } catch {
+        /* fall back to the examples */
+      }
+    }
+    const e = (enemy.length && spriteFrom(enemy)) || spriteFrom(exampleStrokes())!;
+    const b = (boss.length && spriteFrom(boss)) || (enemy.length ? e : spriteFrom(bossExampleStrokes())!);
+    return { enemy: e, boss: b };
+  }
+
   function placeholderSprite(): DoodleSprite {
     placeholder ??= spriteFrom(heroExampleStrokes())!;
     return placeholder;
@@ -84,8 +102,11 @@ export function initVersus(ctx: VersusCtx) {
     }
     withName(async (name) => {
       pad.ensure('me');
+      pad.ensure('enemy');
       const token = await encodeShare({ enemy: pad.getStrokes('me'), boss: [] });
-      const r = new VersusRoom(code, name, token, ctx.params.get('net') === 'local');
+      // Your enemy + boss drawings: co-op games fight the host's.
+      const doodles = await encodeShare({ enemy: pad.getStrokes('enemy'), boss: pad.getStrokes('boss') });
+      const r = new VersusRoom(code, name, token, doodles, ctx.params.get('net') === 'local');
       room = r;
       wire(r);
       history.replaceState(null, '', `${location.pathname}${location.search}#room=${code}`);
@@ -121,10 +142,6 @@ export function initVersus(ctx: VersusCtx) {
   }
 
   function wire(r: VersusRoom): void {
-    r.paintSource = () => ({
-      byPlayer: game.paintGrid ? { ...game.paintGrid.byPlayer } : {},
-      teams: game.paintGrid ? game.paintGrid.coverage() : [0, 0],
-    });
     r.onChange = () => {
       if (room !== r) return;
       syncRemotes();
@@ -139,6 +156,7 @@ export function initVersus(ctx: VersusCtx) {
     r.onSwing = (id) => game.remoteSwing(id);
     r.onHit = (from, dmg, head, erased) => game.versusHit(from, dmg, head, erased);
     r.onDied = (victim, by, head, erased) => game.remoteDied(victim, by, head, erased, r.selfId);
+    r.onCoop = (from, m) => game.coopMessage(from, m);
     r.onLeft = (id) => {
       const name = game.remotes.get(id)?.name;
       game.removeRemote(id);
@@ -159,8 +177,19 @@ export function initVersus(ctx: VersusCtx) {
       ctx.setLook(info.look === 'color');
       game.startVersus(room);
       syncRemotes();
-      const team = room.teamOf(room.selfId);
-      hud.banner(team === null ? `ROUND ${room.state.round}: FIRST TO ${KILLS_TO_WIN}` : `PAINT WAR: YOU'RE TEAM ${TEAM_NAMES[team].toUpperCase()}`, 3);
+      const mode = room.state.mode;
+      if (mode === 'coop') {
+        // Everyone fights the host's drawings; the host starts wave 1 once they're built.
+        const r = room;
+        void coopDoodles(r.players.get(r.hostId)?.doodles ?? null).then((d) => {
+          if (room === r && game.versus === r) game.setCoopDoodles(d);
+        });
+        const host = room.players.get(room.hostId);
+        hud.banner(`CO-OP: SURVIVE ${host?.self ? 'YOUR' : `${(host?.name ?? 'THE HOST').toUpperCase()}'S`} DOODLES`, 3);
+      } else if (mode === 'teams') {
+        const team = room.teamOf(room.selfId) ?? 0;
+        hud.banner(`TEAM DEATHMATCH: YOU'RE TEAM ${TEAM_NAMES[team].toUpperCase()}`, 3);
+      } else hud.banner(`ROUND ${room.state.round}: FIRST TO ${KILLS_TO_WIN}`, 3);
       if (ctx.testMode) {
         ctx.show('playing');
         input.locked = true;
@@ -177,13 +206,14 @@ export function initVersus(ctx: VersusCtx) {
       ctx.show('versus');
     }
     render();
-    hud.paintWar(null, ['', ''], 0, null);
+    hud.teams(null, ['', ''], 0, null, 0);
   }
 
-  /** Paint War players wear their team color; otherwise their own ink. */
+  /** Team Deathmatch players wear their team color; otherwise their own ink. */
   function inkOf(id: string, ink: string): string {
-    const t = room?.teamOf(id);
-    return t === null || t === undefined ? ink : TEAM_COLORS[t];
+    if (room?.state.mode !== 'teams') return ink;
+    const t = room.teamOf(id);
+    return t === null ? ink : TEAM_COLORS[t];
   }
 
   /** Keep the game's remote players in step with the room roster. */
@@ -245,7 +275,8 @@ export function initVersus(ctx: VersusCtx) {
     const b = document.createElement('button');
     b.className = 'mode-btn';
     b.dataset.mode = md.id;
-    b.innerHTML = `<span class="name"></span><small></small>`;
+    b.innerHTML = `<span class="kind"></span><span class="name"></span><small></small>`;
+    b.querySelector('.kind')!.textContent = md.kind;
     b.querySelector('.name')!.textContent = md.name;
     b.querySelector('small')!.textContent = md.blurb;
     b.onclick = () => room?.setMode(md.id);
@@ -284,13 +315,18 @@ export function initVersus(ctx: VersusCtx) {
     $('vs-results').style.display = ended ? '' : 'none';
 
     if (ended) {
-      if (s.mode === 'paintwar') {
-        const win = s.paint[0] === s.paint[1] ? -1 : s.paint[0] > s.paint[1] ? 0 : 1;
+      if (s.mode === 'teams') {
+        const k = teamKills(s.scores, s.teams);
+        const win = k[0] === k[1] ? -1 : k[0] > k[1] ? 0 : 1;
         const mine = room.teamOf(room.selfId);
         $('vs-title').textContent = win < 0 ? "it's a tie!" : win === mine ? 'your team wins!' : `team ${TEAM_NAMES[win]} wins!`;
-        const sum = Math.max(0.001, s.paint[0] + s.paint[1]);
-        $('vs-teamresult').innerHTML = `<div class="pw-bar"><div class="pw-fill t0" style="width:${(s.paint[0] / sum) * 100}%"></div><div class="pw-fill t1" style="width:${(s.paint[1] / sum) * 100}%"></div></div>
-          <div class="pw-labels"><span id="pw-r0">${TEAM_NAMES[0]} ${(s.paint[0] * 100).toFixed(1)}%</span><span id="pw-r1">${(s.paint[1] * 100).toFixed(1)}% ${TEAM_NAMES[1]}</span></div>`;
+        const sum = Math.max(1, k[0] + k[1]);
+        $('vs-teamresult').innerHTML = `<div class="tm-bar"><div class="tm-fill t0" style="width:${(k[0] / sum) * 100}%"></div><div class="tm-fill t1" style="width:${(k[1] / sum) * 100}%"></div></div>
+          <div class="tm-labels"><span class="tm-l0">${TEAM_NAMES[0]} ${k[0]} kills</span><span class="tm-l1">${k[1]} kills ${TEAM_NAMES[1]}</span></div>`;
+      } else if (s.mode === 'coop') {
+        $('vs-title').textContent = `your team reached wave ${s.wave}`;
+        const total = Object.values(s.scores).reduce((a, b) => a + b, 0);
+        $('vs-teamresult').innerHTML = `<div class="coop-result">${total} doodles erased together</div>`;
       } else {
         const top = leader(s.scores);
         const winner = top ? room.players.get(top.id) : null;
@@ -329,7 +365,7 @@ export function initVersus(ctx: VersusCtx) {
       return;
     }
 
-    $('vs-title').textContent = 'versus';
+    $('vs-title').textContent = 'multiplayer';
     $('vs-status').textContent =
       n < 2 ? 'waiting for friends… send them the code or the invite link. draw your fighter while you wait!' : 'draw your fighter and vote for a map.';
 
@@ -457,13 +493,14 @@ export function initVersus(ctx: VersusCtx) {
         const r = room;
         const rows = r.sortedPlayers().map((p) => ({ name: p.name, kills: r.state.scores[p.id] ?? 0, ink: inkOf(p.id, p.ink), self: p.self }));
         rows.sort((a, b) => b.kills - a.kills);
-        if (r.state.mode === 'paintwar') {
-          // Host's numbers when we have them, my own grid in between.
-          const cover = r.isHost || !(r.state.paint[0] + r.state.paint[1]) ? (game.paintGrid?.coverage() ?? r.state.paint) : r.state.paint;
-          hud.paintWar(cover, [TEAM_NAMES[0], TEAM_NAMES[1]], r.timeLeft, r.teamOf(r.selfId));
+        if (r.state.mode === 'teams') {
+          hud.teams(teamKills(r.state.scores, r.state.teams), [TEAM_NAMES[0], TEAM_NAMES[1]], r.timeLeft, r.teamOf(r.selfId), TEAM_KILLS_TO_WIN);
           hud.board(rows, 0, r.timeLeft);
+        } else if (r.state.mode === 'coop') {
+          hud.teams(null, ['', ''], 0, null, 0);
+          hud.board(rows, 0, 0);
         } else {
-          hud.paintWar(null, ['', ''], 0, null);
+          hud.teams(null, ['', ''], 0, null, 0);
           hud.board(rows, KILLS_TO_WIN, r.timeLeft);
         }
       }

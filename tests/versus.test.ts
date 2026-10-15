@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { computeAwards, makeTeams, pickMap } from '../src/net/versus';
-import { PaintGrid } from '../src/game/paintGrid';
+import { computeAwards, makeTeams, parseMode, pickMap, teamKills } from '../src/net/versus';
+import { coopDifficulty } from '../src/game/difficulty';
 
 describe('versus room logic', () => {
   it('splits players into alternating teams', () => {
@@ -19,43 +19,48 @@ describe('versus room logic', () => {
       { victim: 'a', by: 'c', head: false, erased: true },
       { victim: 'b', by: 'c', head: false, erased: false },
     ];
-    const aw = Object.fromEntries(computeAwards(ev, { c: 40, a: 5 }, ['a', 'b', 'c']).map((x) => [x.id, x]));
+    const aw = Object.fromEntries(computeAwards(ev, ['a', 'b', 'c']).map((x) => [x.id, x]));
     expect(aw.mvp.player).toBe('a');
     expect(aw.sharpshooter.player).toBe('a');
     expect(aw.sharpshooter.value).toBe(2);
     expect(aw.streak.player).toBe('a');
     expect(aw.streak.value).toBe(3);
-    expect(aw.picasso.player).toBe('c');
     expect(aw.eraser.player).toBe('c');
     expect(aw.doormat.player).toBe('b');
   });
 
   it('ignores players who left', () => {
-    const aw = computeAwards([{ victim: 'b', by: 'gone', head: true, erased: false }], {}, ['b']);
+    const aw = computeAwards([{ victim: 'b', by: 'gone', head: true, erased: false }], ['b']);
     expect(aw.find((x) => x.id === 'mvp')).toBeUndefined();
   });
 });
 
-describe('paint war grid', () => {
-  it('claims cells for a team and overpainting steals them', () => {
-    const g = new PaintGrid(10);
-    const a = g.claim(0, 0, 1, 0, 'p1');
-    expect(a).toBeGreaterThan(0);
-    expect(g.counts[0]).toBe(a);
-    // Same spot by the other team flips the cells.
-    g.claim(0, 0, 1, 1, 'p2');
-    expect(g.counts[0]).toBe(0);
-    expect(g.counts[1]).toBe(a);
-    expect(g.byPlayer.p1).toBe(a);
-    expect(g.byPlayer.p2).toBe(a);
-    const [c0, c1] = g.coverage();
-    expect(c0).toBe(0);
-    expect(c1).toBeCloseTo(a / g.total);
+describe('team deathmatch and co-op', () => {
+  it('adds up kills per team', () => {
+    expect(teamKills({ a: 3, b: 2, c: 4, d: 0 }, { a: 0, b: 1, c: 0, d: 1 })).toEqual([7, 2]);
   });
 
-  it('repainting your own cells scores nothing extra', () => {
-    const g = new PaintGrid(10);
-    g.claim(3, 3, 1, 0, 'p1');
-    expect(g.claim(3, 3, 1, 0, 'p1')).toBe(0);
+  it('reads modes, falling back to free-for-all', () => {
+    expect(parseMode('teams')).toBe('teams');
+    expect(parseMode('coop')).toBe('coop');
+    expect(parseMode('paintwar')).toBe('deathmatch');
+  });
+
+  it('co-op enemy kills count for the killer, never for the enemy', () => {
+    const ev = [
+      { victim: 'enemy', by: 'a', head: true, erased: false },
+      { victim: 'enemy', by: 'a', head: false, erased: false },
+      { victim: 'a', by: 'enemy', head: false, erased: false },
+    ];
+    const aw = Object.fromEntries(computeAwards(ev, ['a', 'b']).map((x) => [x.id, x]));
+    expect(aw.mvp.player).toBe('a');
+    expect(aw.mvp.value).toBe(2);
+    expect(aw.doormat.player).toBe('a');
+  });
+
+  it('co-op scales enemies with the team size', () => {
+    expect(coopDifficulty(1).count).toBe(1);
+    expect(coopDifficulty(3).count).toBeCloseTo(2.2);
+    expect(coopDifficulty(4).enemyHp).toBeCloseTo(1.3);
   });
 });

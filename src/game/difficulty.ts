@@ -39,3 +39,9 @@ export function scaleQueue(q: EnemyKind[], mult: number, rand: () => number = Ma
   while (out.length < target) out.splice(Math.floor(rand() * (out.length + 1)), 0, rest[Math.floor(rand() * rest.length)]);
   return [...boss, ...out];
 }
+
+/** Co-op: normal difficulty, with more (and slightly tougher) enemies for each extra player. */
+export function coopDifficulty(players: number): DifficultyDef {
+  const extra = Math.max(0, players - 1);
+  return { ...DIFFICULTIES.normal, count: 1 + 0.6 * extra, enemyHp: 1 + 0.1 * extra, maxAlive: 2 * extra };
+}

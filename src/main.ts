@@ -334,7 +334,11 @@ function pickUpgrade(i: number): void {
 game.onUpgrade = (choices, beatClock) => {
   upgradeChoices = choices;
   const owned = game.ownedUpgrades;
-  $('upgrade-sub').textContent = beatClock ? 'beat the clock: 4 choices this time!' : 'beat the wave clock to get 4 choices';
+  $('upgrade-sub').textContent = game.isCoop
+    ? "the game doesn't stop! next wave starts when everyone has picked"
+    : beatClock
+      ? 'beat the clock: 4 choices this time!'
+      : 'beat the wave clock to get 4 choices';
   const host = $('upgrade-cards');
   host.innerHTML = '';
   choices.forEach((u, i) => {
@@ -580,9 +584,9 @@ function frame(now: number): void {
   }
   versus.tick(realDt);
   if (topdownMap) game.topdown();
-  else if (versus.playing && game.versus && (screen === 'playing' || screen === 'paused')) {
-    // A versus match keeps running behind the pause card; just ignore input there.
-    if (screen === 'paused') {
+  else if (versus.playing && game.versus && (screen === 'playing' || screen === 'paused' || screen === 'upgrade')) {
+    // A match keeps running behind the pause card and co-op upgrade cards; just ignore input there.
+    if (screen !== 'playing') {
       input.keys.clear();
       input.mouseDown = false;
       input.rightDown = false;

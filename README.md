@@ -62,16 +62,20 @@ Movement pieces: launch pads (`launchPad`), updrafts (`updraft`), conveyors (`co
 
 Map vote pictures live in `public/img/maps/`. After changing a map, regenerate them: `npx vite --port 5173` then `node scripts/render-map-thumbs.mjs` (needs Playwright + ffmpeg).
 
-## Versus (multiplayer)
+## Multiplayer
 - **Menu:** main menu → Multiplayer → **create a game** (5-letter code + invite link `/play/#room=CODE`) or join with a code. 2–4 players.
 - **Room:** 1) draw your fighter (live for everyone), 2) vote for a map (top-down photos), 3) the **host** picks the mode and presses **Start**; the most-voted map is played.
-- **Modes:** *Deathmatch* (first to 10 kills or 5 min) and *Paint War* (2 teams, orange vs blue, 3 min: every shot paints in your team color and claims ground on a 1.5m grid; overpainting steals it; the team with more of the map painted wins; no friendly fire).
-- **In a match:** damage arrows show where hits come from, comic bursts ("POW!", "NICE SHOT!", "DOUBLE!", "ZZZAP!") pop by the gun, and while respawning you spectate your killer through their eyes.
-- **Results:** winner, Paint War bar, awards (MVP, Sharpshooter, Unstoppable, Picasso, Clean Sweep, Doormat), then the host picks **rematch** (same map + mode) or **back to lobby**.
-- No slow-mo, no upgrades. Same HP/speed for everyone; health regenerates after 4s; 3s respawn with 1.5s spawn protection. Sniper/eraser/killstreak guns do a bit less damage than in solo.
-- **Networking, no database:** a Supabase Realtime channel (`penstrike-room-CODE`) is used only for presence and to set up direct WebRTC links. Gameplay goes peer to peer (shots go reliable in Paint War, since they decide the score). If a direct link fails, that pair relays through the channel.
-- The earliest joiner hosts (round clock, mode, start, awards, Paint War score); if they leave the next player takes over. Hits are decided by the shooter (fine between friends, not cheat-proof); versus results don't go to the leaderboard.
-- Code: `src/net/signal.ts`, `src/net/mesh.ts`, `src/net/versus.ts` (room, modes, teams, awards), `src/versusUi.ts`, `src/game/remotePlayer.ts`, `src/game/paintGrid.ts`.
+- **Modes:**
+  - *Free-for-all* (versus): first to 10 kills or 5 min.
+  - *Team Deathmatch* (versus): orange vs blue, split by join order; first team to 15 kills or 5 min; no friendly fire.
+  - *Co-op Waves*: the whole team against the solo waves, using the **host's** enemy and boss drawings. Enemies chase the nearest player and there are more of them (and slightly tougher) per extra player. Upgrades between waves (the game keeps running; the next wave starts when everyone picked, or after 20s). If you go down you spectate a teammate and come back at the next wave; when everyone is down the run ends and the results show the wave you reached. No wave clock, no slow-mo, no health regen (health drops only).
+- **In a match:** damage arrows show where hits come from, comic bursts ("POW!", "NICE SHOT!", "DOUBLE!", "ZZZAP!") pop by the gun, and while respawning in versus you spectate your killer through their eyes.
+- **Results:** winner (or team bar / wave reached), awards (MVP, Sharpshooter, Unstoppable, Clean Sweep, Doormat), then the host picks **rematch** (same map + mode) or **back to lobby**.
+- Versus: no slow-mo, no upgrades. Same HP/speed for everyone; health regenerates after 4s; 3s respawn with 1.5s spawn protection. Sniper/eraser/killstreak guns do a bit less damage than in solo.
+- **Networking, no database:** a Supabase Realtime channel (`penstrike-room-CODE`) is used only for presence and to set up direct WebRTC links. Gameplay goes peer to peer. If a direct link fails, that pair relays through the channel.
+- The earliest joiner hosts (round clock, mode, start, awards); if they leave the next player takes over. Hits are decided by the shooter (fine between friends, not cheat-proof); multiplayer results don't go to the leaderboard.
+- **Co-op networking:** the host runs the waves and enemy AI and sends enemy positions (10×/s), enemy shots, kills and wave changes. Everyone else mirrors the enemies, sends their hits to the host (who decides kills and drops), and dodges the same bullets on their own screen. If the host leaves mid-run, the run ends at the wave it reached.
+- Code: `src/net/signal.ts`, `src/net/mesh.ts`, `src/net/versus.ts` (room, modes, teams, awards), `src/versusUi.ts`, `src/game/remotePlayer.ts`, co-op section of `src/game/game.ts`.
 - Local testing without Supabase: two tabs of `/play/?test&net=local&name=A`.
 
 ## How the look works
