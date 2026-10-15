@@ -140,7 +140,7 @@ export class Game {
   private stats: { enemy: DoodleStats; boss: DoodleStats } | null = null;
   readonly combo = new Combo();
   private owned: Record<string, number> = {};
-  /** Easter-egg cheats, toggled from the menus. Single player only. */
+  /** Easter-egg cheats, toggled by typing on the menus (solo and versus). */
   cheats = { infiniteInk: false, godPen: false };
   mods: Mods = modsFrom({});
   difficulty: DifficultyDef = DIFFICULTIES.normal;
@@ -1152,7 +1152,7 @@ export class Game {
     this.projectiles.clear();
     this.fx.clear();
     this.resetJuice();
-    this.owned = {};
+    this.owned = this.cheats.godPen ? maxedUpgrades() : {};
     this.applyMods();
     this.meter.reset();
     this.meter.active = false;
@@ -1199,6 +1199,7 @@ export class Game {
 
   private respawn(): void {
     this.weapons = WEAPONS.map((d) => new WeaponState(d));
+    for (const w of this.weapons) w.infinite = this.cheats.infiniteInk;
     this.switchWeapon(0, true);
     this.applyMods();
     const at = this.versusSpawn();
