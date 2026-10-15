@@ -328,6 +328,31 @@ body {
   max-height: 100%;
   overflow: auto;
 }
+#solo .sheet {
+  position: relative;
+}
+/* Invisible easter-egg button: the bottom notebook square left of the margin line. */
+button.secret-corner,
+button.secret-corner:hover,
+button.secret-corner:active {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 52px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  cursor: default;
+}
+.cheat-note {
+  margin-top: 8px;
+  color: var(--red);
+  font-size: 18px;
+  transform: rotate(-1deg);
+}
 .small-sheet {
   text-align: center;
   min-width: 320px;

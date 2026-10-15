@@ -39,7 +39,7 @@ import { Player } from './player';
 import { Projectiles } from './projectiles';
 import { TimeMeter } from './timeMeter';
 import { ViewModel } from './viewmodel';
-import { Mods, Upgrade, modsFrom, rollUpgrades } from './upgrades';
+import { Mods, Upgrade, maxedUpgrades, modsFrom, rollUpgrades } from './upgrades';
 import { EnemyKind, isBossWave, maxAlive, parTime, spawnQueue, timeBonus } from './waves';
 import { ALL_WEAPONS, HEADSHOT_MULT, STREAKS, WEAPONS, WeaponDef, WeaponId, WeaponState, damageAt, spinStep } from './weapons';
 
@@ -140,6 +140,8 @@ export class Game {
   private stats: { enemy: DoodleStats; boss: DoodleStats } | null = null;
   readonly combo = new Combo();
   private owned: Record<string, number> = {};
+  /** Easter-egg cheats, toggled by typing on the menus (solo and versus). */
+  cheats = { infiniteInk: false, godPen: false };
   mods: Mods = modsFrom({});
   difficulty: DifficultyDef = DIFFICULTIES.normal;
   /** Real-time seconds left on the wave clock (bonus only). */
@@ -299,7 +301,7 @@ export class Game {
     this.doodles = doodles;
     this.difficulty = DIFFICULTIES[difficulty];
     this.stats = { enemy: statsOf(doodles.enemy), boss: statsOf(doodles.boss) };
-    this.owned = {};
+    this.owned = this.cheats.godPen ? maxedUpgrades() : {};
     this.combo.reset();
     for (const e of this.enemies) this.removeEnemy(e);
     this.enemies = [];
@@ -309,6 +311,8 @@ export class Game {
     this.fx.clear();
     this.resetJuice();
     this.weapons = WEAPONS.map((d) => new WeaponState(d));
+    // Killstreak guns stay finite so they still run dry and hand back your gun.
+    for (const w of this.weapons) w.infinite = this.cheats.infiniteInk;
     this.switchWeapon(0, true);
     this.applyMods();
     this.streak = 0;
@@ -1148,7 +1152,7 @@ export class Game {
     this.projectiles.clear();
     this.fx.clear();
     this.resetJuice();
-    this.owned = {};
+    this.owned = this.cheats.godPen ? maxedUpgrades() : {};
     this.applyMods();
     this.meter.reset();
     this.meter.active = false;
@@ -1195,6 +1199,7 @@ export class Game {
 
   private respawn(): void {
     this.weapons = WEAPONS.map((d) => new WeaponState(d));
+    for (const w of this.weapons) w.infinite = this.cheats.infiniteInk;
     this.switchWeapon(0, true);
     this.applyMods();
     const at = this.versusSpawn();

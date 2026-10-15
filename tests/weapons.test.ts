@@ -79,4 +79,15 @@ describe('minigun spin-up', () => {
     expect(spin).toBeCloseTo(0.8);
     expect(spinStep(0.5, rifle, true, 0.1)).toBe(0);
   });
+
+  it('infinite ink never spends ammo or reloads', () => {
+    const w = new WeaponState(rifle);
+    w.infinite = true;
+    for (let i = 0; i < rifle.mag * 3; i++) {
+      w.cooldown = 0;
+      expect(w.fire()).toBe(true);
+    }
+    expect(w.ammo).toBe(rifle.mag);
+    expect(w.startReload()).toBe(false);
+  });
 });

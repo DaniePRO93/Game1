@@ -79,6 +79,7 @@
 
     <div id="solo" class="screen" style="display: none">
       <div class="sheet">
+        <button id="btn-cheat" class="secret-corner" tabindex="-1" aria-hidden="true"></button>
         <div class="screen-top"><button class="back" data-back="menu">← menu</button><h2>single player</h2></div>
         <div class="menu-body">
           <div class="pad-col">
@@ -112,6 +113,7 @@
               <div id="diff-blurb" class="diff-blurb"></div>
             </div>
             <button id="btn-start" class="big">Fight!</button>
+            <div class="cheat-note" style="display: none"></div>
             <details class="more">
               <summary>share &amp; publish your drawings</summary>
               <button id="btn-share">copy a share link</button>
@@ -135,6 +137,7 @@
         <div class="or">or</div>
         <div class="join"><input id="vs-code-in" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false" /><button id="btn-join" class="big-ish">join</button></div>
         <div id="versus-msg"></div>
+        <div class="cheat-note" style="display: none"></div>
       </div>
     </div>
 
@@ -187,6 +190,7 @@
               <button id="vs-start" class="big">start!</button>
               <span id="vs-start-note"></span>
             </div>
+            <div class="cheat-note" style="display: none"></div>
             <div id="vs-players"></div>
           </div>
         </div>

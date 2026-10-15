@@ -92,6 +92,13 @@ export class DrawPad {
     this.save(this.sheet);
   }
 
+  /** Easter egg: put the cheat shape on the active sheet. */
+  cheat(): void {
+    this.sheets[this.sheet] = cheatStrokes();
+    this.redraw();
+    this.save(this.sheet);
+  }
+
   /** Fill a sheet with its example if it is empty. */
   ensure(sheet: Sheet): void {
     if (!this.isEmpty(sheet)) return;
@@ -240,6 +247,39 @@ function exampleFor(sheet: Sheet): Stroke[] {
 /** Examples per sheet: the classic one first, then the ten doodles. */
 function examplesFor(sheet: Sheet): { name: string; strokes: () => Stroke[] }[] {
   return [{ name: sheet === 'boss' ? 'The Doodler' : sheet === 'me' ? 'Pencil Kid' : 'Grumpy Guy', strokes: () => exampleFor(sheet) }, ...DOODLES];
+}
+
+/**
+ * Easter egg "The Loophole": a wide, closed band on two thin stilts. The band
+ * sits inside the top quarter of the drawing's box, so almost every hit is a
+ * headshot, the wide aspect maxes the HP discount, and low coverage keeps HP
+ * low. Box: about 475 wide by 250 tall (ink bounds plus the 6px sprite pad).
+ */
+export function cheatStrokes(): Stroke[] {
+  const T = 329; // band top
+  const B = 560; // feet
+  // Dense points so the pen's corner smoothing keeps the band square.
+  const poly = (...pts: Pt[]): Stroke => {
+    const out: Stroke = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [a, b] = [pts[i], pts[i + 1]];
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 6));
+      for (let k = 0; k < n; k++) out.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  };
+  const s: Stroke[] = [];
+  // The band: one closed loop, so its inside counts as solid.
+  s.push(poly([12, T], [468, T], [468, T + 44], [12, T + 44], [12, T]));
+  // Smug face inside the band (already solid, so it costs nothing).
+  s.push(circle(W / 2 - 40, T + 18, 6, 10));
+  s.push(circle(W / 2 + 40, T + 18, 6, 10));
+  s.push([[W / 2 - 22, T + 32], [W / 2, T + 38], [W / 2 + 22, T + 32]]);
+  // Stilts, open at the bottom so nothing between them gets filled.
+  s.push([[40, T + 44], [40, B]]);
+  s.push([[440, T + 44], [440, B]]);
+  return s;
 }
 
 /** Default "you": a grinning doodle with a cap and a pencil. */
