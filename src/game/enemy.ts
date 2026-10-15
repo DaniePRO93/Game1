@@ -53,6 +53,12 @@ export class Enemy {
   hp: number;
   maxHp: number;
   alive = true;
+  /** Network id (co-op): the host numbers its enemies, everyone else mirrors them. */
+  id = 0;
+  /** Co-op on a non-host: where the host last said this enemy is. */
+  netTarget: THREE.Vector3 | null = null;
+  /** Co-op on a non-host: when the host last mentioned it (seconds, game time). */
+  netSeen = 0;
   /** Facing angle (rotation.y) of the billboard. */
   facing = 0;
   private reveal = 0;
@@ -240,6 +246,46 @@ export class Enemy {
     this.place(tell);
   }
 
+  /**
+   * Co-op mirror of the host's enemy: no AI, just glide to where the host
+   * says it is (`netTarget`) and keep the reveal, flash and squash going.
+   */
+  ghostStep(dt: number): void {
+    if (!this.alive) return;
+    this.flash = Math.max(0, this.flash - dt * 6);
+    this.mat.uniforms.flash.value = this.flash;
+    this.squash.step(dt);
+    if (this.hopV !== 0 || this.hopY > 0) {
+      this.hopV -= 22 * dt;
+      this.hopY += this.hopV * dt;
+      if (this.hopY <= 0) this.hopY = this.hopV = 0;
+    }
+    if (this.reveal < 1) {
+      this.reveal = Math.min(1, this.reveal + dt / (this.def.kind === 'boss' ? 1.6 : 0.7));
+      this.mat.uniforms.reveal.value = this.reveal;
+    }
+    const t = this.netTarget;
+    if (t) {
+      const px = this.pos.x;
+      const pz = this.pos.z;
+      if (this.pos.distanceTo(t) > 6) this.pos.copy(t);
+      else this.pos.lerp(t, 1 - Math.exp(-dt * 12));
+      this.walkPhase += Math.hypot(this.pos.x - px, this.pos.z - pz) * 2.2;
+    }
+    this.place(0);
+  }
+
+  /** Turn the billboard toward this screen's camera (co-op: enemies may be chasing someone else). */
+  faceCamera(cam: THREE.Vector3): void {
+    this.facing = Math.atan2(cam.x - this.pos.x, cam.z - this.pos.z);
+    this.mesh.rotation.y = this.facing;
+  }
+
+  /** White hit flash without taking damage (co-op: the host decides the damage). */
+  flashHit(): void {
+    this.flash = 1;
+  }
+
   /** How much hits move this one (heavies and the boss barely budge). */
   private get resist(): number {
     return this.def.kind === 'boss' ? 0.12 : this.def.heavy ? 0.4 : 1;
@@ -252,6 +298,8 @@ export class Enemy {
   react(dir: THREE.Vector3, push: number): void {
     const r = this.resist;
     this.squash.impulse(4 + push * 1.2 * Math.max(0.35, r));
+    // Mirrors only wobble: the host moves the real one.
+    if (this.netTarget) return;
     const len = Math.hypot(dir.x, dir.z) || 1;
     this.knock.x += (dir.x / len) * push * r;
     this.knock.z += (dir.z / len) * push * r;

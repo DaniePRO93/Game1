@@ -8,7 +8,7 @@ import type { Hud } from '../ui/hud';
 import type { Sfx } from './audio';
 import { GameClock } from './clock';
 import { Combo } from './combo';
-import { DIFFICULTIES, Difficulty, DifficultyDef, scaleQueue } from './difficulty';
+import { DIFFICULTIES, Difficulty, DifficultyDef, coopDifficulty, scaleQueue } from './difficulty';
 import { DoodleStats, doodleStats } from './doodleStats';
 import { ENEMY_DEFS, Enemy, EnemyContext } from './enemy';
 import { Doodled, FX } from './fx';
@@ -32,8 +32,6 @@ import {
   tallyHit,
 } from './juice';
 import { RemotePlayer } from './remotePlayer';
-import { PaintGrid } from './paintGrid';
-import { TEAM_COLORS } from '../net/versus';
 import type { Input } from './input';
 import { Player } from './player';
 import { Projectiles } from './projectiles';
@@ -44,6 +42,8 @@ import { EnemyKind, isBossWave, maxAlive, parTime, spawnQueue, timeBonus } from 
 import { ALL_WEAPONS, HEADSHOT_MULT, STREAKS, WEAPONS, WeaponDef, WeaponId, WeaponState, damageAt, spinStep } from './weapons';
 
 interface Pickup {
+  /** Co-op: same id on every screen, so picking it up removes it for everyone. */
+  id: number;
   kind: 'ammo' | 'health';
   box: THREE.Mesh;
   marker: THREE.Sprite;
@@ -59,17 +59,34 @@ export interface Doodles {
   boss: DoodleSprite;
 }
 
-/** What the game needs from a versus room (VersusRoom implements it). */
+/** What the game needs from a multiplayer room (VersusRoom implements it). */
 export interface VersusLink {
   readonly selfId: string;
-  /** Paint War team of a player (null in deathmatch). */
+  readonly isHost: boolean;
+  readonly mode: 'deathmatch' | 'teams' | 'coop';
+  /** Team of a player: null in free-for-all, 0 for everyone in co-op. */
   teamOf(id: string): number | null;
+  playerCount(): number;
   sendSnap(s: { p: [number, number, number]; yaw: number; sl: number; w: number; alive: number }): void;
   sendShot(from: number[], ends: number[][], weapon: number): void;
   sendSwing(): void;
   sendHit(to: string, dmg: number, head: boolean, erased: boolean): void;
   sendDied(by: string, head: boolean, erased: boolean): void;
+  sendCoop(m: Record<string, unknown>, reliable: boolean): void;
+  coopKill(by: string, head: boolean, erased: boolean): void;
+  setWave(wave: number): void;
+  coopOver(wave: number): void;
 }
+
+/** Co-op: enemy kinds by index (enemy snapshots send the index). */
+const KINDS = Object.keys(ENEMY_DEFS) as EnemyKind[];
+/** Co-op: how often the host sends enemy positions. */
+const COOP_SNAP = 0.1;
+/** Co-op: longest the host waits for everyone to pick an upgrade. */
+const COOP_PICK_S = 20;
+/** Who killed a co-op player (for the kill feed). */
+const ENEMY_KILLER = 'enemy';
+const r2 = (v: number) => Math.round(v * 100) / 100;
 
 /** Versus damage scaling, so one-hit weapons don't dominate. */
 const VERSUS_DAMAGE: Record<WeaponId, number> = { rifle: 1, shotgun: 1, pistol: 1, sniper: 0.8, eraser: 0.7, minigun: 0.8, railgun: 0.6 };
@@ -89,10 +106,6 @@ const AIM_FOV = 55;
 /** Paint splat size per gun. */
 const PAINT_SIZE: Record<WeaponId, number> = { rifle: 0.85, shotgun: 0.55, pistol: 0.75, sniper: 1.3, eraser: 0.9, minigun: 0.65, railgun: 1.7 };
 const paintColors = new Map<number, THREE.Color>();
-const teamColors = TEAM_COLORS.map((c) => new THREE.Color(c));
-function teamColor(team: number): THREE.Color {
-  return teamColors[team] ?? teamColors[0];
-}
 /** One target's share of a shot: merged pellets, where it was first hit and the shot direction. */
 type ShotHit = Tally & { dir: THREE.Vector3; at: THREE.Vector3 };
 const shellColors = new Map<WeaponId, THREE.Color>();
@@ -185,9 +198,21 @@ export class Game {
   private spawnShield = 0;
   private sinceHurt = 0;
   private snapT = 0;
-  /** Paint War coverage (null outside Paint War). */
-  paintGrid: PaintGrid | null = null;
   private killerId = '';
+
+  // ── Co-op (the host runs the enemies; everyone else mirrors them) ──
+  private coop = false;
+  private nextEnemyId = 1;
+  private coopSnapT = 0;
+  /** Host: enemy shots this frame, sent in one message. */
+  private coopShots: number[][] = [];
+  /** Host: players who have picked their upgrade this break. */
+  private coopReady = new Set<string>();
+  private coopPickT = 0;
+  /** Host: how long everyone has been down. */
+  private coopWipeT = 0;
+  /** Non-host: enemies left, as the host counts them. */
+  private coopLeft = 0;
   private lastKillT = -10;
   private killChain = 0;
   private brrrt = false;
@@ -632,20 +657,9 @@ export class Game {
     this.spin = 0;
   }
 
-  /**
-   * Splash paint where a shot landed. In Paint War the paint is the shooter's
-   * team color and claims ground for the team.
-   */
-  private paintAt(p: THREE.Vector3, box: Box, def: WeaponDef, scale = 1, shooter?: string): void {
-    const size = PAINT_SIZE[def.id] * scale;
-    const who = shooter ?? this.versus?.selfId ?? '';
-    const team = this.versus && this.paintGrid ? this.versus.teamOf(who) : null;
-    if (team !== null && this.paintGrid) {
-      this.fx.paint(p, box, teamColor(team), size * 1.2);
-      this.paintGrid.claim(p.x, p.z, size * 0.6, team, who);
-    } else {
-      this.fx.paint(p, box, paintColor(def), size);
-    }
+  /** Splash paint where a shot landed. */
+  private paintAt(p: THREE.Vector3, box: Box, def: WeaponDef, scale = 1): void {
+    this.fx.paint(p, box, paintColor(def), PAINT_SIZE[def.id] * scale);
   }
 
   /** A hit on a doodle splatters paint on whatever is right behind it. */
@@ -655,7 +669,7 @@ export class Game {
     if (hit) this.paintAt(start.addScaledVector(dir, hit.t), hit.box, def, 0.8);
   }
 
-  /** Is this remote player on my Paint War team? (no friendly fire) */
+  /** Is this remote player on my team? (no friendly fire in Team Deathmatch or co-op) */
   private teammate(id: string): boolean {
     if (!this.versus) return false;
     const mine = this.versus.teamOf(this.versus.selfId);
@@ -759,7 +773,7 @@ export class Game {
     let bigKill = false;
     for (const [e, h] of hits) {
       this.hud.nums.spawn(h.at, h.dmg, h.head);
-      const killed = e.damage(h.dmg);
+      const killed = this.damageEnemy(e, h.dmg, h.head, h.dir, false, fliesOnKill(def.id));
       if (killed) {
         kills++;
         bigKill ||= h.head;
@@ -872,7 +886,7 @@ export class Game {
       this.fx.spray(to, dir, ERASER_PINK, 6, 0.06);
       const dmg = def.damage * (e.def.heavy ? def.heavyMult : 1) * this.mods.damage;
       this.hud.nums.spawn(to, dmg, false);
-      const killed = e.damage(dmg);
+      const killed = this.damageEnemy(e, dmg, false, dir, true, true);
       this.sfx.squeak();
       if (killed) this.onKill(e, false, dir, true, true);
       else e.react(dir, KNOCKBACK.eraser);
@@ -880,8 +894,30 @@ export class Game {
     }
   }
 
-  /** `fly`: the kill launches the whole doodle (shotgun, railgun, sword). */
+  /**
+   * Damage an enemy as me. Returns true if that killed it. Co-op players who
+   * aren't the host only flash it and tell the host, who decides (see 'ek').
+   */
+  private damageEnemy(e: Enemy, dmg: number, head: boolean, dir: THREE.Vector3, erased: boolean, fly: boolean): boolean {
+    if (this.coop && this.versus && !this.versus.isHost) {
+      e.flashHit();
+      this.versus.sendCoop({ k: 'eh', id: e.id, dm: Math.round(dmg), hd: head ? 1 : 0, er: erased ? 1 : 0, fl: fly ? 1 : 0, d: [r2(dir.x), r2(dir.y), r2(dir.z)] }, true);
+      return false;
+    }
+    return e.damage(dmg);
+  }
+
+  /** I killed an enemy. `fly`: the kill launches the whole doodle (shotgun, railgun, sword). */
   private onKill(e: Enemy, head: boolean, dir: THREE.Vector3, erased = false, fly = false): void {
+    this.killReward(e, head, erased);
+    const drop = rollDrop(e);
+    this.enemyGone(e, head, dir, erased, fly, this.weapon.def, drop);
+    if (this.coop && this.versus) this.coopAnnounceKill(e, this.versus.selfId, head, erased, fly, dir, drop);
+    if (this.mods.inkBomb > 0) this.inkBomb(e);
+  }
+
+  /** Points, combo, streak and juice for a kill of mine. */
+  private killReward(e: Enemy, head: boolean, erased: boolean): void {
     this.kills++;
     this.comicKill(head, erased);
     this.addStreakKill();
@@ -890,20 +926,20 @@ export class Game {
     if (mult > prevMult) this.sfx.combo(mult);
     this.score += Math.round(e.def.score * (head ? 1.5 : 1) * mult * this.difficulty.score);
     this.meter.onKill(head);
-    if (this.mods.healOnKill) this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.mods.healOnKill);
-    this.deathFx(e, head, dir, erased, fly, this.weapon.def);
+    if (this.mods.healOnKill && !this.dead) this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.mods.healOnKill);
     this.impact(head ? HITSTOP_BIG : HITSTOP_KILL, head);
     this.sfx.kill(e.height, head);
+  }
+
+  /** An enemy dies on this screen: effects, removal and its drop (0 none, 1 ammo, 2 health, 3 both). */
+  private enemyGone(e: Enemy, head: boolean, dir: THREE.Vector3, erased: boolean, fly: boolean, gun: WeaponDef, drop: number): void {
+    e.alive = false;
+    this.deathFx(e, head, dir, erased, fly, gun);
     this.removeEnemy(e);
     this.enemies = this.enemies.filter((x) => x !== e);
-    if (this.mods.inkBomb > 0) this.inkBomb(e);
-    if (e.def.kind === 'boss') {
-      this.hud.banner('THE DOODLER IS ERASED', 2.5);
-      this.dropPickup('health', e.pos);
-      this.dropPickup('ammo', e.pos.clone().add(new THREE.Vector3(1.5, 0, 0)));
-    } else if (Math.random() < 0.3) {
-      this.dropPickup(Math.random() < 0.65 ? 'ammo' : 'health', e.pos);
-    }
+    if (e.def.kind === 'boss') this.hud.banner('THE DOODLER IS ERASED', 2.5);
+    if (drop === 1 || drop === 3) this.dropPickup('ammo', drop === 3 ? e.pos.clone().add(new THREE.Vector3(1.5, 0, 0)) : e.pos, e.id * 2);
+    if (drop === 2 || drop === 3) this.dropPickup('health', e.pos, e.id * 2 + 1);
   }
 
   /** Ink Bomb upgrade: a kill splashes damage on everyone nearby (can chain). */
@@ -918,7 +954,8 @@ export class Game {
       if (!o.alive || !o.ready) continue;
       const d = Math.hypot(o.pos.x - dead.pos.x, o.pos.z - dead.pos.z) - o.radius;
       if (d > 3.5) continue;
-      if (o.damage(this.mods.inkBomb)) this.onKill(o, false, new THREE.Vector3(o.pos.x - at.x, 0.5, o.pos.z - at.z).normalize());
+      const dir = new THREE.Vector3(o.pos.x - at.x, 0.5, o.pos.z - at.z).normalize();
+      if (this.damageEnemy(o, this.mods.inkBomb, false, dir, false, false)) this.onKill(o, false, dir);
     }
   }
 
@@ -948,7 +985,8 @@ export class Game {
 
   // ── Upgrades ──────────────────────────────────────────────────────────
   chooseUpgrade(i: number): void {
-    if (this.waveState !== 'choosing') return;
+    // Co-op keeps going, so a late pick still counts after the next wave started.
+    if (this.waveState !== 'choosing' && !(this.coop && this.screenUpgradeOpen)) return;
     const u = this.choices[i];
     if (u) {
       this.owned[u.id] = (this.owned[u.id] ?? 0) + 1;
@@ -960,7 +998,9 @@ export class Game {
       this.hud.hint(`${u.name}: ${u.text}`, 2.5);
     }
     this.choices = [];
-    this.nextWave();
+    // Co-op: the host starts the next wave once everyone has picked.
+    if (this.coop) this.coopPicked();
+    else this.nextWave();
   }
 
   get ownedUpgrades(): Record<string, number> {
@@ -990,13 +1030,28 @@ export class Game {
     this.waveState = 'intro';
     this.stateTimer = 2.2;
     this.spawnTimer = 0;
-    this.clockLeft = parTime(this.wave);
+    // Co-op has no wave clock (the bonus is for solo runs).
+    this.clockLeft = this.coop ? 0 : parTime(this.wave);
+    if (this.coop && this.versus) {
+      this.versus.sendCoop({ k: 'wv', st: 'intro', w: this.wave }, true);
+      this.versus.setWave(this.wave);
+      this.coopWaveIntro(this.wave);
+      return;
+    }
     this.hud.banner(isBossWave(this.wave) ? `WAVE ${this.wave} — THE DOODLER` : `WAVE ${this.wave}`);
     this.sfx.wave();
   }
 
   private updateWaves(dt: number, realDt: number): void {
-    if (this.waveState === 'choosing') return;
+    if (this.waveState === 'choosing') {
+      // Co-op host: next wave once everyone picked (or took too long).
+      if (this.coop) {
+        this.coopPickT -= realDt;
+        const everyone = [this.versus!.selfId, ...this.remotes.keys()].every((id) => this.coopReady.has(id));
+        if (everyone || this.coopPickT <= 0) this.nextWave();
+      }
+      return;
+    }
     if (this.waveState === 'intro') {
       this.stateTimer -= dt;
       if (this.stateTimer <= 0) this.waveState = 'fighting';
@@ -1005,6 +1060,13 @@ export class Game {
     if (this.waveState === 'break') {
       this.stateTimer -= dt;
       if (this.stateTimer <= 0) {
+        if (this.coop && this.versus) {
+          this.coopReady.clear();
+          this.coopPickT = COOP_PICK_S;
+          this.versus.sendCoop({ k: 'wv', st: 'pick', w: this.wave }, true);
+          this.coopOfferUpgrades();
+          return;
+        }
         this.waveState = 'choosing';
         this.choices = rollUpgrades(this.owned, this.beatClock ? 4 : 3);
         if (this.choices.length) this.onUpgrade(this.choices, this.beatClock);
@@ -1028,6 +1090,11 @@ export class Game {
     if (!this.queue.length && !this.enemies.length) {
       this.waveState = 'break';
       this.stateTimer = 1.8;
+      if (this.coop && this.versus) {
+        this.versus.sendCoop({ k: 'wv', st: 'clear', w: this.wave }, true);
+        this.coopWaveClear(this.wave);
+        return;
+      }
       const clear = Math.round(50 * this.wave * this.difficulty.score);
       const tb = Math.round(timeBonus(this.wave, this.clockLeft) * this.difficulty.score);
       this.beatClock = tb > 0;
@@ -1040,8 +1107,9 @@ export class Game {
     if (!this.doodles || !this.stats) return;
     let pos = at;
     if (!pos) {
-      const pp = this.player.pos;
-      const far = this.level.spawnPoints.filter((s) => Math.hypot(s.x - pp.x, s.z - pp.z) > 18);
+      // Away from every player (co-op: teammates too).
+      const players = [this.player.pos, ...Array.from(this.remotes.values(), (r) => r.pos)];
+      const far = this.level.spawnPoints.filter((s) => players.every((pp) => Math.hypot(s.x - pp.x, s.z - pp.z) > 18));
       const pool = far.length ? far : this.level.spawnPoints;
       pos = pool[Math.floor(Math.random() * pool.length)].clone();
       pos.x += (Math.random() - 0.5) * 3;
@@ -1055,6 +1123,7 @@ export class Game {
     const base = ENEMY_DEFS[kind];
     const def = { ...base, fireInterval: base.fireInterval * d.fireInterval, projSpeed: base.projSpeed * d.projSpeed, damage: base.damage * d.enemyDamage };
     const e = new Enemy(def, boss ? this.doodles.boss : this.doodles.enemy, pos, hpScale * st.hpMult * d.enemyHp, st.speedMult);
+    e.id = this.nextEnemyId++;
     this.enemies.push(e);
     this.overlay.add(e.mesh, e.shadow);
   }
@@ -1065,11 +1134,12 @@ export class Game {
   }
 
   get enemiesLeft(): number {
+    if (this.coop && this.versus && !this.versus.isHost) return this.coopLeft;
     return this.queue.length + this.enemies.length;
   }
 
   // ── Pickups ───────────────────────────────────────────────────────────
-  private dropPickup(kind: 'ammo' | 'health', at: THREE.Vector3): void {
+  private dropPickup(kind: 'ammo' | 'health', at: THREE.Vector3, id = 0): void {
     const box = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.45, 0.55), this.pickupMaterial(kind));
     const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.markerTextures[kind], transparent: true, depthWrite: false }));
     marker.scale.setScalar(0.5);
@@ -1077,7 +1147,7 @@ export class Game {
     pos.y = 0;
     this.world.add(box);
     this.overlay.add(marker);
-    this.pickups.push({ kind, box, marker, pos, life: 30, t: Math.random() * 6 });
+    this.pickups.push({ id, kind, box, marker, pos, life: 30, t: Math.random() * 6 });
   }
 
   private removePickup(p: Pickup): void {
@@ -1096,7 +1166,7 @@ export class Game {
       p.box.rotation.y = p.t;
       p.marker.position.set(p.pos.x, 1.0 + Math.sin(p.t * 3) * 0.08, p.pos.z);
       const pp = this.player.pos;
-      const near = Math.hypot(pp.x - p.pos.x, pp.z - p.pos.z) < 1.3 && Math.abs(pp.y - p.pos.y) < 1.5;
+      const near = !this.dead && Math.hypot(pp.x - p.pos.x, pp.z - p.pos.z) < 1.3 && Math.abs(pp.y - p.pos.y) < 1.5;
       if (near) {
         if (p.kind === 'ammo') {
           for (const w of this.weapons) w.addAmmoFraction(0.3);
@@ -1106,6 +1176,7 @@ export class Game {
           this.hud.hint('+30 hp', 1.2);
         }
         this.sfx.pickup();
+        if (this.coop) this.versus?.sendCoop({ k: 'pk', id: p.id }, true);
       }
       if (near || p.life <= 0) {
         this.removePickup(p);
@@ -1141,12 +1212,11 @@ export class Game {
   }
 
   // ── Versus ───────────────────────────────────────────────────────────
-  /** Start (or restart) versus play on the current map. */
+  /** Start (or restart) multiplayer on the current map. */
   startVersus(link: VersusLink): void {
     this.versus = link;
-    for (const e of this.enemies) this.removeEnemy(e);
-    this.enemies = [];
-    this.queue = [];
+    this.coop = link.mode === 'coop';
+    this.clearEnemies();
     for (const p of this.pickups) this.removePickup(p);
     this.pickups = [];
     this.projectiles.clear();
@@ -1159,17 +1229,41 @@ export class Game {
     this.clock.timeScale = 1;
     this.sfx.setSlowmo(0);
     this.combo.reset();
-    this.paintGrid = link.teamOf(link.selfId) !== null ? new PaintGrid(this.level.bounds) : null;
+    if (this.coop) {
+      // Enemies wait for the drawings (setCoopDoodles).
+      this.doodles = null;
+      this.stats = null;
+      this.difficulty = coopDifficulty(link.playerCount());
+      this.wave = 0;
+      this.score = 0;
+      this.kills = 0;
+      this.streak = 0;
+      this.waveState = 'intro';
+      this.coopLeft = 0;
+      this.coopWipeT = 0;
+      this.coopShots = [];
+      this.nextEnemyId = 1;
+    }
     this.respawn();
-    this.hud.setVersus(true);
+    this.hud.setVersus(true, this.coop);
   }
 
   stopVersus(): void {
     this.versus = null;
-    this.paintGrid = null;
+    this.coop = false;
+    this.clearEnemies();
+    for (const p of this.pickups) this.removePickup(p);
+    this.pickups = [];
+    this.projectiles.clear();
     for (const id of Array.from(this.remotes.keys())) this.removeRemote(id);
     this.dead = false;
     this.hud.setVersus(false);
+  }
+
+  private clearEnemies(): void {
+    for (const e of this.enemies) this.removeEnemy(e);
+    this.enemies = [];
+    this.queue = [];
   }
 
   addRemote(r: RemotePlayer): void {
@@ -1202,7 +1296,8 @@ export class Game {
     for (const w of this.weapons) w.infinite = this.cheats.infiniteInk;
     this.switchWeapon(0, true);
     this.applyMods();
-    const at = this.versusSpawn();
+    // Co-op: start together; versus: away from everyone.
+    const at = this.coop ? this.coopSpawn() : this.versusSpawn();
     this.player.spawn(at);
     // Face the middle of the map.
     this.player.yaw = Math.atan2(at.x - this.level.idle.center.x, at.z - this.level.idle.center.z);
@@ -1259,7 +1354,10 @@ export class Game {
       r.kill();
     }
     const vName = r?.name ?? 'someone';
-    if (by === selfId) {
+    if (by === ENEMY_KILLER) {
+      this.onVersusEvent(`${vName} got erased`);
+      if (this.coop) this.hud.hint(`${vName} is down: they're back next wave`, 2.5);
+    } else if (by === selfId) {
       this.comicKill(head, erased);
       this.addStreakKill();
       this.sfx.kill(r?.height ?? 1.85, head);
@@ -1289,7 +1387,7 @@ export class Game {
       if (len < 0.01) continue;
       dir.divideScalar(len);
       const hit = raycastBoxes(this.level.boxes, o, dir, len + 0.3);
-      if (hit) this.paintAt(o.clone().addScaledVector(dir, hit.t), hit.box, def, 1, id);
+      if (hit) this.paintAt(o.clone().addScaledVector(dir, hit.t), hit.box, def);
     }
     this.fx.flash(o, weapon === 1 ? 0.5 : 0.35, false);
     if (o.distanceTo(this.player.pos) < 60) this.enemyShotSound(o);
@@ -1326,7 +1424,8 @@ export class Game {
     if (this.dead) {
       this.deathT += realDt;
       const k = Math.min(1, this.deathT / 1.2);
-      const killer = this.remotes.get(this.killerId);
+      // Co-op: watch a teammate who's still up until the next wave brings you back.
+      const killer = this.coop ? Array.from(this.remotes.values()).find((r) => r.alive) : this.remotes.get(this.killerId);
       if (this.deathT > 0.9 && killer && killer.alive) {
         // Spectate whoever got me, through their eyes.
         this.camera.position.set(killer.pos.x, killer.pos.y + (killer.sliding ? 1.0 : 1.6), killer.pos.z);
@@ -1339,9 +1438,12 @@ export class Game {
         this.camera.rotation.z = k * 0.9;
         this.damageFlash = 1 - k * 0.5;
       }
-      this.fx.update(realDt, realDt);
-      this.respawnT -= realDt;
-      if (this.respawnT <= 0) this.respawn();
+      if (this.coop) this.coopWorld(realDt);
+      else {
+        this.fx.update(realDt, realDt);
+        this.respawnT -= realDt;
+        if (this.respawnT <= 0) this.respawn();
+      }
       this.sendSnap();
       this.pushHud();
       return;
@@ -1359,11 +1461,13 @@ export class Game {
 
     this.spawnShield = Math.max(0, this.spawnShield - realDt);
     this.sinceHurt += realDt;
-    if (this.sinceHurt > REGEN_DELAY && this.player.hp < this.player.maxHp) {
+    // Versus heals up between fights; co-op plays like solo (health pickups only).
+    if (!this.coop && this.sinceHurt > REGEN_DELAY && this.player.hp < this.player.maxHp) {
       this.player.hp = Math.min(this.player.maxHp, this.player.hp + REGEN_RATE * realDt);
     }
     this.damageFlash = Math.max(0, this.damageFlash - realDt * 1.8);
-    this.fx.update(realDt, realDt);
+    if (this.coop) this.coopWorld(realDt);
+    else this.fx.update(realDt, realDt);
 
     const speedKick = Math.max(0, Math.min(12, (this.player.speed - 7) * 1.5));
     const fov = this.zoomed ? ZOOM_FOV : this.aiming ? AIM_FOV : BASE_FOV + speedKick;
@@ -1375,6 +1479,297 @@ export class Game {
     this.hud.nums.update(realDt, this.camera, innerWidth, innerHeight);
     this.sendSnap();
     this.pushHud();
+  }
+
+  // ── Co-op ─────────────────────────────────────────────────────────────
+  // The host runs waves and enemy AI like solo, aiming each enemy at the
+  // nearest player, and sends enemy positions (10×/s), enemy shots, kills and
+  // wave changes. Everyone else mirrors the enemies ("ghosts"), sends their
+  // hits to the host, and dodges the same bullets on their own screen.
+
+  get isCoop(): boolean {
+    return this.coop;
+  }
+
+  /** The drawings everyone fights (the host's). The host starts wave 1 once it has them. */
+  setCoopDoodles(d: Doodles): void {
+    if (!this.coop || !this.versus) return;
+    this.doodles = d;
+    this.stats = { enemy: statsOf(d.enemy), boss: statsOf(d.boss) };
+    if (this.versus.isHost && this.wave === 0) this.nextWave();
+  }
+
+  private coopSpawn(): THREE.Vector3 {
+    const at = this.level.playerSpawn.clone();
+    at.x += (Math.random() - 0.5) * 3;
+    at.z += (Math.random() - 0.5) * 3;
+    return at;
+  }
+
+  /** Enemies, enemy bullets, pickups and waves for one co-op frame (also while I'm down). */
+  private coopWorld(dt: number): void {
+    const link = this.versus!;
+    const cam = this.camera.getWorldPosition(new THREE.Vector3());
+    if (link.isHost) {
+      const targets: THREE.Vector3[] = [];
+      if (!this.dead) targets.push(this.player.eye(new THREE.Vector3()));
+      for (const r of this.remotes.values()) if (r.alive) targets.push(new THREE.Vector3(r.pos.x, r.pos.y + 1.6, r.pos.z));
+      const ctx: EnemyContext = {
+        playerEye: new THREE.Vector3(),
+        boxes: this.level.boxes,
+        obstacles: this.level.obstacles,
+        bounds: this.level.bounds,
+        others: this.enemies,
+        fire: (from, dir, e) => {
+          this.projectiles.spawn(from, dir, e.def.projSpeed, e.def.damage);
+          this.fx.flash(from, e.def.kind === 'boss' ? 1.4 : 0.6, false);
+          this.enemyShotSound(from);
+          this.coopShots.push([r2(from.x), r2(from.y), r2(from.z), r2(dir.x), r2(dir.y), r2(dir.z), e.def.projSpeed, e.def.damage, e.def.kind === 'boss' ? 1 : 0]);
+        },
+        onBossPhase: (boss) => {
+          this.hud.banner('THE DOODLER SCRIBBLES MORE!', 1.8);
+          for (let i = 0; i < 3; i++) {
+            const a = (i / 3) * Math.PI * 2;
+            this.spawnEnemy('grunt', boss.pos.clone().add(new THREE.Vector3(Math.cos(a) * 4, 0, Math.sin(a) * 4)));
+          }
+        },
+      };
+      for (const e of this.enemies) {
+        // Each enemy goes after whoever is closest.
+        let best = targets[0];
+        let bestD = Infinity;
+        for (const t of targets) {
+          const d = Math.hypot(t.x - e.pos.x, t.z - e.pos.z);
+          if (d < bestD) {
+            bestD = d;
+            best = t;
+          }
+        }
+        if (best) ctx.playerEye.copy(best);
+        else ctx.playerEye.copy(this.level.idle.center);
+        e.update(dt, ctx);
+      }
+      if (this.doodles) this.updateWaves(dt, dt);
+      if (this.coopShots.length) {
+        link.sendCoop({ k: 'ef', s: this.coopShots }, true);
+        this.coopShots = [];
+      }
+      this.coopSnapT -= dt;
+      if (this.coopSnapT <= 0) {
+        this.coopSnapT = COOP_SNAP;
+        link.sendCoop({ k: 'es', w: this.wave, l: this.enemiesLeft, e: this.enemies.map((e) => [e.id, KINDS.indexOf(e.def.kind), r2(e.pos.x), r2(e.pos.y), r2(e.pos.z), Math.round((e.hp / e.maxHp) * 100)]) }, false);
+      }
+      // Everyone down for a moment: the run is over.
+      const anyoneUp = !this.dead || Array.from(this.remotes.values()).some((r) => r.alive);
+      this.coopWipeT = anyoneUp ? 0 : this.coopWipeT + dt;
+      if (this.coopWipeT > 2.5) {
+        this.coopWipeT = -Infinity;
+        link.coopOver(this.wave);
+      }
+    } else {
+      for (const e of [...this.enemies]) {
+        // Gone from the host's list for a while (a missed kill message): drop it.
+        if (this.time - e.netSeen > 1.5) {
+          this.removeEnemy(e);
+          this.enemies = this.enemies.filter((x) => x !== e);
+          continue;
+        }
+        e.ghostStep(dt);
+      }
+    }
+    for (const e of this.enemies) e.faceCamera(cam);
+
+    const dmg = this.projectiles.update(
+      dt,
+      this.level.boxes,
+      (p) => !this.dead && this.player.contains(p),
+      (p, box) => this.fx.splat(p, box, 0.45),
+      (vel) => {
+        this.hurtAngle = this.angleTo(this.player.pos.x - vel.x, this.player.pos.z - vel.z);
+        this.hud.damageArrow(this.hurtAngle);
+      },
+    );
+    if (dmg > 0 && !this.dead && this.spawnShield <= 0) {
+      this.player.hp -= dmg;
+      this.damageFlash = 1;
+      this.hurtJolt(this.hurtAngle);
+      this.sfx.hurt();
+      this.streak = 0;
+      if (this.player.hp <= 0) this.coopDown();
+    }
+    this.updatePickups(dt, dt);
+    this.combo.update(dt);
+    this.fx.update(dt, dt);
+  }
+
+  /** I'm down in co-op: spectate until the next wave. */
+  private coopDown(): void {
+    this.dead = true;
+    this.deathT = 0;
+    this.player.hp = 0;
+    this.zoomed = false;
+    this.aiming = false;
+    this.streak = 0;
+    this.viewmodel.root.visible = false;
+    this.versus?.sendDied(ENEMY_KILLER, false, false);
+    this.hud.banner('YOU GOT ERASED: BACK NEXT WAVE', 3);
+    this.onVersusEvent('you got erased');
+    this.sendSnap(true);
+  }
+
+  private coopWaveIntro(w: number): void {
+    this.wave = w;
+    this.waveState = 'intro';
+    if (this.screenUpgradeOpen) this.hud.hint('the next wave started: pick your upgrade!', 2);
+    this.hud.banner(isBossWave(w) ? `WAVE ${w} — THE DOODLER` : `WAVE ${w}`);
+    this.sfx.wave();
+    if (this.dead) {
+      this.respawnKeepGear();
+      this.hud.hint('back in! your team carried you', 2.5);
+    }
+  }
+
+  private coopWaveClear(w: number): void {
+    const clear = Math.round(50 * w * this.difficulty.score);
+    this.score += clear;
+    this.waveState = 'break';
+    this.hud.banner(`WAVE CLEARED  +${clear}`);
+  }
+
+  /** Between co-op waves: my upgrade choices (the game keeps running). */
+  private coopOfferUpgrades(): void {
+    this.waveState = 'choosing';
+    this.choices = rollUpgrades(this.owned, 3);
+    if (this.choices.length) {
+      this.screenUpgradeOpen = true;
+      this.onUpgrade(this.choices, false);
+    } else this.coopPicked();
+  }
+
+  private coopPicked(): void {
+    this.screenUpgradeOpen = false;
+    const link = this.versus;
+    if (!link) return;
+    if (link.isHost) this.coopReady.add(link.selfId);
+    else link.sendCoop({ k: 'rdy' }, true);
+  }
+  /** My upgrade cards are up (co-op). */
+  private screenUpgradeOpen = false;
+
+  /** Back up in co-op, keeping weapons, ammo and upgrades. */
+  private respawnKeepGear(): void {
+    const at = this.coopSpawn();
+    this.player.spawn(at);
+    this.dead = false;
+    this.deathT = 0;
+    this.damageFlash = 0;
+    this.spawnShield = SPAWN_SHIELD;
+    this.viewmodel.root.visible = true;
+    this.hud.spectating(null);
+    this.sendSnap(true);
+  }
+
+  /** Host: tell everyone an enemy died (and who gets the kill). */
+  private coopAnnounceKill(e: Enemy, by: string, head: boolean, erased: boolean, fly: boolean, dir: THREE.Vector3, drop: number): void {
+    const link = this.versus;
+    if (!link?.isHost) return;
+    link.sendCoop({ k: 'ek', id: e.id, by, hd: head ? 1 : 0, er: erased ? 1 : 0, fl: fly ? 1 : 0, dr: drop, d: [r2(dir.x), r2(dir.y), r2(dir.z)] }, true);
+    link.coopKill(by, head, erased);
+  }
+
+  /** Co-op traffic from the room. */
+  coopMessage(from: string, m: Record<string, unknown>): void {
+    const link = this.versus;
+    if (!link || !this.coop) return;
+    const host = link.isHost;
+    const vec = (a: unknown) => (Array.isArray(a) && a.length === 3 ? new THREE.Vector3(Number(a[0]) || 0, Number(a[1]) || 0, Number(a[2]) || 0) : new THREE.Vector3(0, 0, 1));
+    switch (m.k) {
+      case 'es': {
+        // Enemy positions from the host.
+        if (host || !this.doodles) return;
+        this.coopLeft = Number(m.l) || 0;
+        const w = Number(m.w) || 0;
+        if (w > this.wave) this.wave = w;
+        for (const row of Array.isArray(m.e) ? (m.e as number[][]).slice(0, 64) : []) {
+          const [id, kind, x, y, z, hp] = row.map(Number);
+          let e = this.enemies.find((o) => o.id === id);
+          if (!e) {
+            const k = KINDS[kind] ?? 'grunt';
+            const at = new THREE.Vector3(x, y, z);
+            e = new Enemy(ENEMY_DEFS[k], k === 'boss' ? this.doodles.boss : this.doodles.enemy, at);
+            e.id = id;
+            e.netTarget = at.clone();
+            this.enemies.push(e);
+            this.overlay.add(e.mesh, e.shadow);
+          }
+          e.netTarget!.set(x, y, z);
+          e.netSeen = this.time;
+          e.hp = (Math.max(0, hp) / 100) * e.maxHp;
+        }
+        return;
+      }
+      case 'ef': {
+        // Enemy shots from the host.
+        if (host) return;
+        for (const s of Array.isArray(m.s) ? (m.s as number[][]).slice(0, 32) : []) {
+          const [ox, oy, oz, dx, dy, dz, speed, dmg, boss] = s.map(Number);
+          const from = new THREE.Vector3(ox, oy, oz);
+          this.projectiles.spawn(from, new THREE.Vector3(dx, dy, dz).normalize(), speed || 15, Math.min(40, dmg || 0));
+          this.fx.flash(from, boss ? 1.4 : 0.6, false);
+          this.enemyShotSound(from);
+        }
+        return;
+      }
+      case 'eh': {
+        // Host: someone hit an enemy.
+        if (!host) return;
+        const e = this.enemies.find((o) => o.id === Number(m.id));
+        if (!e || !e.alive) return;
+        const dir = vec(m.d);
+        if (e.damage(Math.min(400, Number(m.dm) || 0))) {
+          const drop = rollDrop(e);
+          const gun = WEAPONS[0];
+          this.enemyGone(e, !!m.hd, dir, !!m.er, !!m.fl, gun, drop);
+          this.coopAnnounceKill(e, from, !!m.hd, !!m.er, !!m.fl, dir, drop);
+        } else e.react(dir, 2);
+        return;
+      }
+      case 'ek': {
+        // An enemy died (from the host).
+        if (host) return;
+        const e = this.enemies.find((o) => o.id === Number(m.id));
+        if (!e) return;
+        const mine = m.by === link.selfId;
+        const dir = vec(m.d);
+        if (mine) this.killReward(e, !!m.hd, !!m.er);
+        this.enemyGone(e, !!m.hd, dir, !!m.er, !!m.fl && mine, mine ? this.weapon.def : WEAPONS[0], Number(m.dr) || 0);
+        if (mine) {
+          this.hud.hitmarker(!!m.hd, true);
+          if (this.mods.inkBomb > 0) this.inkBomb(e);
+        }
+        return;
+      }
+      case 'pk': {
+        // Someone grabbed a pickup.
+        const i = this.pickups.findIndex((p) => p.id === Number(m.id));
+        if (i >= 0) {
+          this.removePickup(this.pickups[i]);
+          this.pickups.splice(i, 1);
+        }
+        return;
+      }
+      case 'wv': {
+        if (host) return;
+        const w = Number(m.w) || 0;
+        if (m.st === 'intro') this.coopWaveIntro(w);
+        else if (m.st === 'clear') this.coopWaveClear(w);
+        else if (m.st === 'pick') this.coopOfferUpgrades();
+        return;
+      }
+      case 'rdy':
+        if (host) this.coopReady.add(from);
+        return;
+    }
   }
 
   private pushHud(): void {
@@ -1396,9 +1791,15 @@ export class Game {
       boss: boss ? { name: 'THE DOODLER', frac: boss.hp / boss.maxHp } : null,
       zoomed: this.zoomed,
       combo: this.combo.chain > 0 ? { mult: this.combo.mult, frac: this.combo.fraction } : null,
-      clock: this.waveState === 'fighting' || this.waveState === 'intro' ? { left: this.clockLeft, par: parTime(this.wave) } : null,
+      clock: !this.coop && (this.waveState === 'fighting' || this.waveState === 'intro') ? { left: this.clockLeft, par: parTime(this.wave) } : null,
     });
   }
+}
+
+/** What a dead enemy drops: 0 nothing, 1 ammo, 2 health, 3 both (the boss). */
+function rollDrop(e: Enemy): number {
+  if (e.def.kind === 'boss') return 3;
+  return Math.random() < 0.3 ? (Math.random() < 0.65 ? 1 : 2) : 0;
 }
 
 function statsOf(s: DoodleSprite): DoodleStats {

@@ -55,7 +55,7 @@ export class Hud {
     dmg: $('hud-dmg'),
     comic: $('hud-comic'),
     spectate: $('hud-spectate'),
-    paintwar: $('hud-paintwar'),
+    teams: $('hud-teams'),
     feed: $('hud-feed'),
     hp: $('hud-hp-fill').parentElement!,
     flash: $('hud-flash'),
@@ -75,23 +75,25 @@ export class Hud {
     ).join('');
   }
 
-  /** Versus mode hides the wave/slow-mo parts and shows the scoreboard. */
-  setVersus(on: boolean): void {
+  /** Multiplayer hides the slow-mo parts and shows the scoreboard; versus also hides the wave parts. */
+  setVersus(on: boolean, coop = false): void {
     this.el.root.classList.toggle('versus', on);
+    this.el.root.classList.toggle('coop', on && coop);
     if (!on) {
       this.el.board.innerHTML = '';
+      this.lastBoard = '';
       this.el.feed.innerHTML = '';
-      this.el.paintwar.style.display = 'none';
+      this.el.teams.style.display = 'none';
       this.spectating(null);
     }
   }
 
-  /** Versus scoreboard (sorted by kills). */
-  board(rows: { name: string; kills: number; ink: string; self: boolean }[], goal: number, timeLeft: number): void {
+  /** Multiplayer scoreboard (sorted by kills). */
+  board(rows: { name: string; kills: number; ink: string; self: boolean }[], goal: number, timeLeft: number, label = 'kills'): void {
     const t = Math.ceil(timeLeft / 1000);
     const clock = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
     const html =
-      `<div class="goal">${goal > 0 ? `first to ${goal} · ${clock}` : 'kills'}</div>` +
+      `<div class="goal">${goal > 0 ? `first to ${goal} · ${clock}` : timeLeft > 0 ? `${label} · ${clock}` : label}</div>` +
       rows
         .map((r) => `<div class="row${r.self ? ' self' : ''}"><span class="dot" style="background:${r.ink}"></span><span class="n"></span><b>${r.kills}</b></div>`)
         .join('');
@@ -134,19 +136,16 @@ export class Hud {
     this.el.spectate.style.display = name ? '' : 'none';
   }
 
-  /** Paint War team bar (coverage 0..1 per team). */
-  paintWar(cover: [number, number] | null, names: [string, string], timeLeft: number, myTeam: number | null): void {
-    this.el.paintwar.style.display = cover ? '' : 'none';
-    if (!cover) return;
-    const pct = (v: number) => `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`;
-    const sum = Math.max(0.001, cover[0] + cover[1]);
-    // Bar shows the share of painted ground each team holds.
-    $('pw-0').style.width = `${(cover[0] / sum) * 100}%`;
-    $('pw-1').style.width = `${(cover[1] / sum) * 100}%`;
-    $('pw-l0').textContent = `${names[0]}${myTeam === 0 ? ' (you)' : ''} ${pct(cover[0])}`;
-    $('pw-l1').textContent = `${pct(cover[1])} ${names[1]}${myTeam === 1 ? ' (you)' : ''}`;
+  /** Team Deathmatch bar: each team's kills toward the goal. */
+  teams(kills: [number, number] | null, names: [string, string], timeLeft: number, myTeam: number | null, goal: number): void {
+    this.el.teams.style.display = kills ? '' : 'none';
+    if (!kills) return;
+    $('tm-0').style.width = `${Math.min(50, (kills[0] / Math.max(1, goal)) * 50)}%`;
+    $('tm-1').style.width = `${Math.min(50, (kills[1] / Math.max(1, goal)) * 50)}%`;
+    $('tm-l0').textContent = `${names[0]}${myTeam === 0 ? ' (you)' : ''} ${kills[0]}`;
+    $('tm-l1').textContent = `${kills[1]} ${names[1]}${myTeam === 1 ? ' (you)' : ''}`;
     const t = Math.ceil(timeLeft / 1000);
-    $('pw-time').textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    $('tm-time').textContent = `first to ${goal} · ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
   }
 
   /** Kill feed line (fades after a few seconds). */

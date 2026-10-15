@@ -758,12 +758,13 @@ button.big {
   background: linear-gradient(90deg, #ff7a00, #ffd60a 40%, #2fb45f 70%, #2d7fe6);
 }
 
-/* ── Versus HUD ─────────────────────────────────── */
+/* ── Multiplayer HUD ────────────────────────────── */
+/* Versus hides the wave parts; co-op keeps them (but never slow-mo). */
 #hud.versus #hud-meter,
-#hud.versus .tr,
-#hud.versus #hud-combo,
-#hud.versus #hud-boss,
-#hud.versus #hud-score {
+#hud.versus:not(.coop) .tr,
+#hud.versus:not(.coop) #hud-combo,
+#hud.versus:not(.coop) #hud-boss,
+#hud.versus:not(.coop) #hud-score {
   display: none !important;
 }
 #hud-board {
@@ -772,6 +773,10 @@ button.big {
   right: 24px;
   min-width: 190px;
   font-size: 20px;
+}
+/* Co-op keeps the wave counter in the top-right corner, so the board sits below it. */
+#hud.coop #hud-board {
+  top: 96px;
 }
 #hud-board .goal {
   text-align: right;
@@ -1107,15 +1112,15 @@ button.big {
   border-radius: 8px 4px 9px 5px;
 }
 
-/* ── Paint War bar ─────────────────────────────── */
-#hud-paintwar {
+/* ── Team Deathmatch bar ───────────────────────── */
+#hud-teams {
   position: absolute;
   top: 14px;
   left: 50%;
   transform: translateX(-50%);
   width: min(460px, 60vw);
 }
-.pw-bar {
+.tm-bar {
   display: flex;
   height: 18px;
   border: 2.5px solid var(--ink);
@@ -1123,27 +1128,38 @@ button.big {
   overflow: hidden;
   background: var(--paper);
 }
-.pw-fill {
+.tm-fill {
   height: 100%;
   width: 0;
   transition: width 0.4s ease-out;
 }
-.pw-fill.t0 {
+.tm-fill.t0 {
   background: #ff6a00;
 }
-.pw-fill.t1 {
+.tm-fill.t1 {
   background: #1e7bff;
   margin-left: auto;
 }
-.pw-labels {
+.coop-result {
+  font-size: 22px;
+  margin: 4px 0 8px;
+}
+.mode-btn .kind {
+  display: block;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.7;
+}
+.tm-labels {
   display: flex;
   justify-content: space-between;
   font-size: 18px;
 }
-#pw-l0 {
+.tm-l0 {
   color: #d55400;
 }
-#pw-l1 {
+.tm-l1 {
   color: #1e5fd0;
 }
 
@@ -1281,11 +1297,11 @@ details.more[open] > *:not(summary) {
 }
 
 /* ── Results: team bar + awards ────────────────── */
-#vs-teamresult .pw-bar {
+#vs-teamresult .tm-bar {
   height: 28px;
   margin: 4px 0;
 }
-#vs-teamresult .pw-labels {
+#vs-teamresult .tm-labels {
   font-size: 22px;
 }
 .vs-awards {

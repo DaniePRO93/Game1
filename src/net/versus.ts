@@ -4,28 +4,34 @@ import { Mesh, NetMsg } from './mesh';
 import { LocalSignal, PeerMeta, Signal, SupabaseSignal } from './signal';
 
 /**
- * A versus room: up to 4 friends who joined with the same code. The earliest
- * joiner is the host: they pick the mode and press Start (the map is the most
- * voted one), and they run the round clock. Everything else (positions, hits,
- * deaths) flows peer to peer.
+ * A multiplayer room: up to 4 friends who joined with the same code. The
+ * earliest joiner is the host: they pick the mode and press Start (the map is
+ * the most voted one), and they run the round clock. In versus everything
+ * else (positions, hits, deaths) flows peer to peer; in co-op the host also
+ * runs the enemies (see the co-op part of game.ts).
  */
 export const MAX_PLAYERS = 4;
 export const KILLS_TO_WIN = 10;
+export const TEAM_KILLS_TO_WIN = 15;
 export const MATCH_MS = 5 * 60 * 1000;
-export const PAINT_MS = 3 * 60 * 1000;
 /** Ink colors players are drawn in, by join order. */
 export const PLAYER_INKS = ['#c0302a', '#1f7a4a', '#d9730d', '#7a3fc0'];
-/** Paint War team colors (orange vs blue). */
+/** Team Deathmatch colors (orange vs blue). */
 export const TEAM_COLORS = ['#ff6a00', '#1e7bff'];
 export const TEAM_NAMES = ['orange', 'blue'];
 
 export type Phase = 'lobby' | 'play' | 'end';
-export type Mode = 'deathmatch' | 'paintwar';
+export type Mode = 'deathmatch' | 'teams' | 'coop';
 
-export const MODES: { id: Mode; name: string; blurb: string }[] = [
-  { id: 'deathmatch', name: 'Deathmatch', blurb: 'everyone for themselves · first to 10 kills' },
-  { id: 'paintwar', name: 'Paint War', blurb: '2 teams · 3 minutes · paint the most map' },
+export const MODES: { id: Mode; kind: 'versus' | 'co-op'; name: string; blurb: string }[] = [
+  { id: 'deathmatch', kind: 'versus', name: 'Free-for-all', blurb: 'everyone for themselves · first to 10 kills' },
+  { id: 'teams', kind: 'versus', name: 'Team Deathmatch', blurb: 'orange vs blue · first team to 15 kills' },
+  { id: 'coop', kind: 'co-op', name: 'Co-op Waves', blurb: 'your team vs the waves · how far can you get?' },
 ];
+
+export function parseMode(m: unknown): Mode {
+  return m === 'teams' || m === 'coop' ? m : 'deathmatch';
+}
 
 export interface RoomPlayer {
   id: string;
@@ -33,6 +39,8 @@ export interface RoomPlayer {
   joinedAt: number;
   /** Their "you" drawing as a share token (arrives with hello). */
   token: string | null;
+  /** Their enemy + boss drawings as a share token (co-op uses the host's). */
+  doodles: string | null;
   ink: string;
   self: boolean;
 }
@@ -51,12 +59,12 @@ export interface RoomState {
   mode: Mode;
   map: MapId;
   votes: Record<string, MapId>;
-  /** Kills this round. */
+  /** Kills this round (players in versus, enemies in co-op). */
   scores: Record<string, number>;
-  /** Paint War team per player (0 or 1). */
+  /** Team Deathmatch team per player (0 or 1). */
   teams: Record<string, number>;
-  /** Paint War coverage per team, 0..1 (host's count). */
-  paint: [number, number];
+  /** Co-op: wave the team is on (or reached, once the round ended). */
+  wave: number;
   awards: Award[];
 }
 
@@ -108,8 +116,18 @@ export function makeTeams(ids: string[]): Record<string, number> {
   return Object.fromEntries(ids.map((id, i) => [id, i % 2]));
 }
 
-/** Fun end-of-round awards from the kill log and paint counts. */
-export function computeAwards(events: KillEvent[], paintBy: Record<string, number>, ids: string[]): Award[] {
+/** Team Deathmatch kills per team. */
+export function teamKills(scores: Record<string, number>, teams: Record<string, number>): [number, number] {
+  const out: [number, number] = [0, 0];
+  for (const [id, k] of Object.entries(scores)) {
+    const t = teams[id];
+    if (t === 0 || t === 1) out[t] += k;
+  }
+  return out;
+}
+
+/** Fun end-of-round awards from the kill log (co-op kills have victim 'enemy'). */
+export function computeAwards(events: KillEvent[], ids: string[]): Award[] {
   const count = (f: (e: KillEvent) => string | null) => {
     const m = new Map<string, number>();
     for (const e of events) {
@@ -131,7 +149,6 @@ export function computeAwards(events: KillEvent[], paintBy: Record<string, numbe
     run.set(e.by, r);
     streaks.set(e.by, Math.max(streaks.get(e.by) ?? 0, r));
   }
-  const paint = new Map(Object.entries(paintBy).filter(([id]) => ids.includes(id)));
   const top = (m: Map<string, number>, min: number): [string, number] | null => {
     let best: [string, number] | null = null;
     for (const [id, v] of m) if (ids.includes(id) && v >= min && (!best || v > best[1])) best = [id, v];
@@ -144,7 +161,6 @@ export function computeAwards(events: KillEvent[], paintBy: Record<string, numbe
   add('mvp', 'MVP', (v) => `${v} kills`, top(kills, 1));
   add('sharpshooter', 'Sharpshooter', (v) => `${v} headshot${v === 1 ? '' : 's'}`, top(heads, 1));
   add('streak', 'Unstoppable', (v) => `${v} kills in a row`, top(streaks, 2));
-  add('picasso', 'Picasso', (v) => `${v} spots painted`, top(paint, 1));
   add('eraser', 'Clean Sweep', (v) => `${v} eraser kill${v === 1 ? '' : 's'}`, top(erases, 1));
   add('doormat', 'Doormat', (v) => (v === 1 ? 'erased once' : `erased ${v} times`), top(deaths, 1));
   return out;
@@ -155,7 +171,7 @@ export class VersusRoom {
   readonly mesh: Mesh;
   private signal: Signal;
   players = new Map<string, RoomPlayer>();
-  state: RoomState = { phase: 'lobby', round: 0, mode: 'deathmatch', map: 'construction', votes: {}, scores: {}, teams: {}, paint: [0, 0], awards: [] };
+  state: RoomState = { phase: 'lobby', round: 0, mode: 'deathmatch', map: 'construction', votes: {}, scores: {}, teams: {}, wave: 0, awards: [] };
   /** Local time (performance.now) when the current phase's clock runs out; 0 = no clock. */
   deadline = 0;
   private hostBeat = 0;
@@ -164,8 +180,6 @@ export class VersusRoom {
   private lastRound = 0;
   /** Host: kill log for awards. */
   private events: KillEvent[] = [];
-  /** Host: per-player paint counts and team coverage, supplied by the game. */
-  paintSource: () => { byPlayer: Record<string, number>; teams: [number, number] } = () => ({ byPlayer: {}, teams: [0, 0] });
 
   /** Roster, votes, scores or phase changed. */
   onChange: () => void = () => {};
@@ -178,12 +192,20 @@ export class VersusRoom {
   onDied: (victim: string, by: string, head: boolean, erased: boolean) => void = () => {};
   onLeft: (id: string) => void = () => {};
   onFull: () => void = () => {};
+  /** Co-op game traffic (enemies, enemy shots, hits on enemies, waves). */
+  onCoop: (from: string, m: NetMsg) => void = () => {};
 
-  constructor(code: string, private selfName: string, private selfToken: string, local = false) {
+  constructor(
+    code: string,
+    private selfName: string,
+    private selfToken: string,
+    private selfDoodles: string,
+    local = false,
+  ) {
     this.code = code;
     this.signal = local ? new LocalSignal() : new SupabaseSignal();
     this.mesh = new Mesh(this.signal);
-    this.mesh.onOpen = (id) => this.mesh.send(id, { t: 'hello', name: this.selfName, token: this.selfToken }, true);
+    this.mesh.onOpen = (id) => this.mesh.send(id, this.hello(), true);
     this.mesh.onClose = (id) => this.removePlayer(id);
     this.mesh.onMessage = (from, m) => this.handle(from, m);
     this.signal.onPeers = (peers) => this.setRoster(peers);
@@ -195,7 +217,7 @@ export class VersusRoom {
 
   async join(): Promise<void> {
     const me: PeerMeta = { id: this.selfId, name: this.selfName, joinedAt: Date.now() };
-    this.players.set(me.id, { ...me, token: this.selfToken, ink: PLAYER_INKS[0], self: true });
+    this.players.set(me.id, { ...me, token: this.selfToken, doodles: this.selfDoodles, ink: PLAYER_INKS[0], self: true });
     await this.signal.join(this.code, me);
   }
 
@@ -222,11 +244,27 @@ export class VersusRoom {
     return this.deadline ? Math.max(0, this.deadline - performance.now()) : 0;
   }
 
-  /** Paint War team of a player, or null in deathmatch. */
+  get mode(): Mode {
+    return this.state.mode;
+  }
+
+  playerCount(): number {
+    return this.players.size;
+  }
+
+  /**
+   * Team of a player: 0/1 in Team Deathmatch, 0 for everyone in co-op (no
+   * friendly fire), null in free-for-all.
+   */
   teamOf(id: string): number | null {
-    if (this.state.mode !== 'paintwar') return null;
+    if (this.state.mode === 'coop') return 0;
+    if (this.state.mode !== 'teams') return null;
     const t = this.state.teams[id];
     return t === 0 || t === 1 ? t : null;
+  }
+
+  private hello(): NetMsg {
+    return { t: 'hello', name: this.selfName, token: this.selfToken, dd: this.selfDoodles };
   }
 
   // ── Outgoing ──────────────────────────────────────────────────────────
@@ -236,7 +274,7 @@ export class VersusRoom {
     this.selfToken = token;
     const me = this.players.get(this.selfId);
     if (me) me.token = token;
-    this.mesh.broadcast({ t: 'hello', name: this.selfName, token }, true);
+    this.mesh.broadcast(this.hello(), true);
     this.onChange();
   }
 
@@ -283,8 +321,35 @@ export class VersusRoom {
   }
 
   sendShot(from: number[], ends: number[][], weapon: number): void {
-    // Paint War coverage depends on shots, so they go on the reliable channel there.
-    this.mesh.broadcast({ t: 'f', o: from, e: ends, w: weapon }, this.state.mode === 'paintwar');
+    this.mesh.broadcast({ t: 'f', o: from, e: ends, w: weapon }, false);
+  }
+
+  /** Co-op traffic to everyone (or one player). */
+  sendCoop(m: Record<string, unknown>, reliable: boolean, to?: string): void {
+    const msg = { ...m, t: 'c' };
+    if (to) this.mesh.send(to, msg, reliable);
+    else this.mesh.broadcast(msg, reliable);
+  }
+
+  /** Host, co-op: someone killed an enemy. */
+  coopKill(by: string, head: boolean, erased: boolean): void {
+    if (!this.isHost) return;
+    this.recordKill({ victim: 'enemy', by, head, erased });
+    this.onChange();
+  }
+
+  /** Host, co-op: the team reached a new wave. */
+  setWave(wave: number): void {
+    if (!this.isHost || this.state.wave === wave) return;
+    this.state.wave = wave;
+    this.sendState();
+  }
+
+  /** Host, co-op: everyone is down, the run is over. */
+  coopOver(wave: number): void {
+    if (!this.isHost || this.state.phase !== 'play') return;
+    this.state.wave = wave;
+    this.endRound();
   }
 
   sendSwing(): void {
@@ -320,7 +385,7 @@ export class VersusRoom {
     for (const p of allowed) {
       if (p.id === this.selfId) continue;
       const cur = this.players.get(p.id);
-      if (!cur) this.players.set(p.id, { id: p.id, name: p.name, joinedAt: p.joinedAt, token: null, ink: PLAYER_INKS[0], self: false });
+      if (!cur) this.players.set(p.id, { id: p.id, name: p.name, joinedAt: p.joinedAt, token: null, doodles: null, ink: PLAYER_INKS[0], self: false });
     }
     for (const id of Array.from(this.players.keys())) if (!ids.has(id) || !allowed.some((p) => p.id === id)) if (id !== this.selfId) this.removePlayer(id);
     this.mesh.setPeers(allowed.filter((p) => p.id !== this.selfId));
@@ -344,7 +409,7 @@ export class VersusRoom {
 
   private recordKill(e: KillEvent): void {
     if (this.state.phase !== 'play') return;
-    if (e.by !== e.victim) this.state.scores[e.by] = (this.state.scores[e.by] ?? 0) + 1;
+    if (e.by !== e.victim && this.players.has(e.by)) this.state.scores[e.by] = (this.state.scores[e.by] ?? 0) + 1;
     this.events.push(e);
   }
 
@@ -356,11 +421,12 @@ export class VersusRoom {
         if (p) {
           p.name = String(m.name ?? p.name).slice(0, 16);
           p.token = typeof m.token === 'string' ? m.token.slice(0, 20000) : null;
+          p.doodles = typeof m.dd === 'string' ? m.dd.slice(0, 40000) : null;
           this.onChange();
         }
         if (this.isHost) {
-          // Late joiner in Paint War: put them on the smaller team.
-          if (this.state.phase === 'play' && this.state.mode === 'paintwar' && this.state.teams[from] === undefined) {
+          // Late joiner in Team Deathmatch: put them on the smaller team.
+          if (this.state.phase === 'play' && this.state.mode === 'teams' && this.state.teams[from] === undefined) {
             const n0 = Object.values(this.state.teams).filter((t) => t === 0).length;
             const n1 = Object.values(this.state.teams).filter((t) => t === 1).length;
             this.state.teams[from] = n0 <= n1 ? 0 : 1;
@@ -390,6 +456,9 @@ export class VersusRoom {
       case 'hit':
         if (this.state.phase === 'play') this.onHit(from, Math.min(400, Number(m.dmg) || 0), !!m.head, !!m.er);
         break;
+      case 'c':
+        if (this.state.phase === 'play') this.onCoop(from, m);
+        break;
       case 'died':
         this.recordKill({ victim: from, by: String(m.by), head: !!m.head, erased: !!m.erased });
         this.onDied(from, String(m.by), !!m.head, !!m.erased);
@@ -402,16 +471,15 @@ export class VersusRoom {
   private applyState(m: NetMsg): void {
     const prev = this.state.phase;
     const round = Number(m.round);
-    const paint = Array.isArray(m.paint) ? (m.paint as number[]) : [0, 0];
     this.state = {
       phase: m.phase as Phase,
       round,
-      mode: m.mode === 'paintwar' ? 'paintwar' : 'deathmatch',
+      mode: parseMode(m.mode),
       map: m.map as MapId,
       votes: (m.votes as Record<string, MapId>) ?? {},
       scores: (m.scores as Record<string, number>) ?? {},
       teams: (m.teams as Record<string, number>) ?? {},
-      paint: [Number(paint[0]) || 0, Number(paint[1]) || 0],
+      wave: Number(m.wave) || 0,
       awards: Array.isArray(m.awards) ? (m.awards as Award[]).slice(0, 8) : [],
     };
     const left = Number(m.left) || 0;
@@ -433,18 +501,17 @@ export class VersusRoom {
     const ids = this.sortedPlayers().map((p) => p.id);
     s.round++;
     s.scores = Object.fromEntries(ids.map((id) => [id, 0]));
-    s.teams = s.mode === 'paintwar' ? makeTeams(ids) : {};
-    s.paint = [0, 0];
+    s.teams = s.mode === 'teams' ? makeTeams(ids) : {};
+    s.wave = 0;
     s.awards = [];
     this.events = [];
-    this.setPhase('play', s.mode === 'paintwar' ? PAINT_MS : MATCH_MS);
+    // Co-op has no clock: it runs until the whole team is down.
+    this.setPhase('play', s.mode === 'coop' ? 0 : MATCH_MS);
   }
 
   private endRound(): void {
     const s = this.state;
-    const src = this.paintSource();
-    if (s.mode === 'paintwar') s.paint = src.teams;
-    s.awards = computeAwards(this.events, src.byPlayer, this.sortedPlayers().map((p) => p.id));
+    s.awards = computeAwards(this.events, this.sortedPlayers().map((p) => p.id));
     this.setPhase('end', 0);
   }
 
@@ -463,8 +530,12 @@ export class VersusRoom {
     if (this.closed) return;
     if (this.hostId !== this.lastHost) {
       this.lastHost = this.hostId;
-      // Took over as host mid-round with no clock: give the round a fresh one.
-      if (this.isHost && !this.deadline && this.state.phase === 'play') this.deadline = performance.now() + (this.state.mode === 'paintwar' ? PAINT_MS : MATCH_MS);
+      if (this.isHost && this.state.phase === 'play') {
+        // The co-op enemies lived on the old host, so the run ends where it got to.
+        if (this.state.mode === 'coop') this.coopOver(this.state.wave);
+        // Took over as host mid-round with no clock: give the round a fresh one.
+        else if (!this.deadline) this.deadline = performance.now() + MATCH_MS;
+      }
     }
     if (this.isHost) this.hostTick(false);
   }
@@ -478,10 +549,12 @@ export class VersusRoom {
         this.toLobby();
         return;
       }
-      if (s.mode === 'paintwar') s.paint = this.paintSource().teams;
       const top = leader(s.scores);
-      const won = s.mode === 'deathmatch' && top && top.kills >= KILLS_TO_WIN;
-      if (won || now >= this.deadline) {
+      const won =
+        s.mode === 'deathmatch'
+          ? !!top && top.kills >= KILLS_TO_WIN
+          : s.mode === 'teams' && teamKills(s.scores, s.teams).some((k) => k >= TEAM_KILLS_TO_WIN);
+      if (won || (this.deadline && now >= this.deadline)) {
         this.endRound();
         return;
       }
