@@ -394,6 +394,11 @@ $('btn-example').onclick = () => {
   pad.example();
   $('btn-example').textContent = `example: ${pad.exampleName}`;
 };
+// Easter egg: the bottom corner square left of the margin line.
+$('btn-cheat').onclick = () => {
+  pad.cheat();
+  $('btn-example').textContent = 'example: The Loophole';
+};
 
 // Doodles taped around the menus (wide screens only, see .margin-doodle.note).
 placeDoodles(document.querySelector<HTMLElement>('#menu .main-sheet')!, [
