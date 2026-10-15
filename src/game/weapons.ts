@@ -79,6 +79,8 @@ export class WeaponState {
   rateMult = 1;
   reloadMult = 1;
   reserveMult = 1;
+  /** Infinite Ink cheat: shots cost nothing, so it never reloads. */
+  infinite = false;
 
   constructor(public def: WeaponDef) {
     this.ammo = def.mag;
@@ -106,13 +108,13 @@ export class WeaponState {
   /** Consumes a round. Returns false if it could not fire. */
   fire(): boolean {
     if (!this.canFire()) return false;
-    if (!this.def.melee) this.ammo--;
+    if (!this.def.melee && !this.infinite) this.ammo--;
     this.cooldown = this.def.interval / this.rateMult;
     return true;
   }
 
   startReload(): boolean {
-    if (this.reloading > 0 || this.ammo >= this.def.mag || this.reserve <= 0) return false;
+    if (this.infinite || this.reloading > 0 || this.ammo >= this.def.mag || this.reserve <= 0) return false;
     this.reloading = this.def.reload * this.reloadMult;
     return true;
   }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Combo } from '../src/game/combo';
 import { doodleStats } from '../src/game/doodleStats';
-import { UPGRADES, modsFrom, rollUpgrades } from '../src/game/upgrades';
+import { UPGRADES, maxedUpgrades, modsFrom, rollUpgrades } from '../src/game/upgrades';
 import { decodeShare, encodeShare, packBytes, unpackBytes } from '../src/game/share';
 import { parTime, timeBonus } from '../src/game/waves';
 
@@ -40,6 +40,12 @@ describe('combo', () => {
 });
 
 describe('upgrades', () => {
+  it('god pen maxes every upgrade, leaving nothing to roll', () => {
+    const owned = maxedUpgrades();
+    for (const u of UPGRADES) expect(owned[u.id]).toBe(u.max);
+    expect(rollUpgrades(owned, 4)).toEqual([]);
+    expect(modsFrom(owned).ricochet).toBe(true);
+  });
   it('rolls distinct, non-maxed upgrades', () => {
     const owned = { jump: 1, swatter: 1 };
     for (let i = 0; i < 50; i++) {

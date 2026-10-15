@@ -81,6 +81,11 @@ export function rollUpgrades(owned: Record<string, number>, n: number, rand: () 
   return pool.slice(0, n);
 }
 
+/** God Pen cheat: every upgrade at its max level. */
+export function maxedUpgrades(): Record<string, number> {
+  return Object.fromEntries(UPGRADES.map((u) => [u.id, u.max]));
+}
+
 export function modsFrom(owned: Record<string, number>): Mods {
   const m = baseMods();
   for (const u of UPGRADES) for (let i = 0; i < (owned[u.id] ?? 0); i++) u.apply(m);

@@ -394,6 +394,33 @@ $('btn-example').onclick = () => {
   pad.example();
   $('btn-example').textContent = `example: ${pad.exampleName}`;
 };
+// Easter-egg cheats, typed on the menu or the single-player screen (again to turn off):
+// "ink" = Infinite Ink, the Konami code = God Pen.
+const CHEAT_CODES: { code: string[]; key: keyof typeof game.cheats; name: string }[] = [
+  { code: ['i', 'n', 'k'], key: 'infiniteInk', name: 'infinite ink' },
+  { code: ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a'], key: 'godPen', name: 'god pen' },
+];
+let cheatKeys: string[] = [];
+function refreshCheatNote(): void {
+  const on = CHEAT_CODES.filter((c) => game.cheats[c.key]).map((c) => c.name);
+  const el = $('cheat-note');
+  el.style.display = on.length ? '' : 'none';
+  el.textContent = `cheats on: ${on.join(' · ')}`;
+}
+addEventListener('keydown', (e) => {
+  if (screen !== 'menu' && screen !== 'solo') return;
+  if (e.target instanceof HTMLInputElement) return;
+  cheatKeys = [...cheatKeys, e.key.toLowerCase()].slice(-10);
+  for (const c of CHEAT_CODES) {
+    if (cheatKeys.slice(-c.code.length).join() !== c.code.join()) continue;
+    cheatKeys = [];
+    game.cheats[c.key] = !game.cheats[c.key];
+    sfx.init();
+    sfx.upgrade();
+    refreshCheatNote();
+  }
+});
+
 // Easter egg: the bottom corner square left of the margin line.
 $('btn-cheat').onclick = () => {
   pad.cheat();
