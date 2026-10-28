@@ -1,5 +1,53 @@
+import * as THREE from 'three';
 import type { Level, Style } from '../builder';
 import { createBuilder } from '../builder';
+
+/** Handwritten sticky note (canvas texture), drawn in the overlay pass so the ink shader leaves it alone. */
+function stickyNote(lines: string[], w: number, h: number): THREE.Mesh {
+  const cv = document.createElement('canvas');
+  cv.width = 1024;
+  cv.height = Math.round((1024 * h) / w);
+  const c = cv.getContext('2d')!;
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.NoColorSpace;
+  t.anisotropy = 8;
+  const draw = () => {
+    const W = cv.width, H = cv.height;
+    c.fillStyle = 'hsl(52, 95%, 70%)';
+    c.fillRect(0, 0, W, H);
+    // Glue strip and a faint curl shadow along the bottom.
+    c.fillStyle = 'rgba(160, 120, 0, 0.12)';
+    c.fillRect(0, 0, W, H * 0.09);
+    const g = c.createLinearGradient(0, H * 0.85, 0, H);
+    g.addColorStop(0, 'rgba(120, 90, 0, 0)');
+    g.addColorStop(1, 'rgba(120, 90, 0, 0.18)');
+    c.fillStyle = g;
+    c.fillRect(0, H * 0.85, W, H * 0.15);
+    c.strokeStyle = 'rgba(42, 46, 133, 0.45)';
+    c.lineWidth = 6;
+    c.strokeRect(3, 3, W - 6, H - 6);
+    // Blue ballpoint handwriting, sized so the widest line fits.
+    const font = (px: number) => `${px}px "Patrick Hand", "Comic Sans MS", cursive`;
+    c.font = font(100);
+    const widest = Math.max(...lines.map((l) => c.measureText(l).width));
+    const pitch = (H * 0.8) / lines.length;
+    const px = Math.min(100 * ((W * 0.9) / widest), pitch * 0.95);
+    c.font = font(px);
+    c.fillStyle = '#2a2e85';
+    c.textBaseline = 'middle';
+    lines.forEach((l, i) => {
+      c.save();
+      c.translate(W * 0.05 + ((i * 7) % 3) * 4, H * 0.14 + pitch * (i + 0.5));
+      c.rotate(((i % 3) - 1) * 0.008);
+      c.fillText(l, 0, 0);
+      c.restore();
+    });
+    t.needsUpdate = true;
+  };
+  draw();
+  document.fonts?.load(`64px "Patrick Hand"`).then(draw, () => {});
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t }));
+}
 
 /** The original map: a construction site with a concrete frame, crane and house. Ink look. */
 export function buildConstruction(): Level {
@@ -80,6 +128,18 @@ export function buildConstruction(): Level {
   box(cx + 21, 13, cz, 0.08, 11, 0.08, 'plain', false); // cable
   paint('craneOrange');
   box(cx + 21, 12.2, cz, 0.7, 0.8, 0.7, 'fill', false); // hook
+  // A note stuck to the cab's south face, only legible through a scope.
+  const note = stickyNote([
+    'The last door is at',
+    'paycoach.app/lastdoor.',
+    '',
+    'Its word was the last',
+    'thing I told you, on',
+    'the very first page.',
+  ], 1.8, 1.27);
+  note.position.set(cx, 23, cz + 1.36);
+  note.rotation.z = -0.03;
+  b.decor.add(note);
 
   // ── Small house with roof access ───────────────────────────────────────
   const hx0 = 13.5, hx1 = 22.5, hz0 = -8, hz1 = 0, hh = 6;
