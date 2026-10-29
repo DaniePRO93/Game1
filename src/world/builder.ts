@@ -301,6 +301,7 @@ export function createBuilder(o: BuildOpts) {
 
   return {
     scene,
+    decor,
     boxes,
     triggers,
     box,
